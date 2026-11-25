@@ -7,6 +7,7 @@
 #include "cartwheel/quality.h"
 #include "cartwheel/shading.h"
 #include "cartwheel/skin_shading.h"
+#include "pipeline_internal.h"
 
 #define PART "skinshade"
 
@@ -118,8 +119,10 @@ static void fill(t3_extension_ctx *c, void *u) {
   const cw_skin_shading_desc *d = &recs.data[i].d;
   float s[4] = { d->scatter.r, d->scatter.g, d->scatter.b, d->wrap < 0 ? 0 : d->wrap };
   float t[4] = { d->translucency, d->distortion, d->power > 0.01f ? d->power : 0.01f, d->ambient };
+  cw__ext_miss_direct_only = true; /* (a program without a direct light has neither: skinshade.mjs) */
   t3_extension_set_uniform(c, "skinScatter", s, 4);
   t3_extension_set_uniform(c, "skinTranslucency", t, 4);
+  cw__ext_miss_direct_only = false;
 }
 
 void cw__skin_shading_renderer_init(t3_renderer *r);

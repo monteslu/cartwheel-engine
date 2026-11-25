@@ -4,6 +4,15 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.78.2 (2026-11-24)
+
+### Fixed
+
+- Regenerating a table no longer fails on its variant closure. A game's skinned character with its own shading part and the engine's `skinshade`, surveyed under the cascaded sun, was paired by the closure with a scene that has no sun (hemisphere light only: `physical+vcol+skin+eon+l0001+xfeather_skinshade`); its capture failed because skinshade's two values live in the lighting model's direct(), which a program without a direct light never runs, so the program had neither. That state is one the runtime draws (a lit composable material in a scene with no sun keeps its skin and game parts), so it now captures: skinshade adds nothing to a program with no directional, omni or spot light and no cluster or csm part, and the pipeline's report of values a program lacks leaves skinshade's out of such programs (`cw__state_has_direct_light`).
+- A capture that fails says why. three.c's capture child reports missing values on its stdout and exits 1, so the error was `capture <state> wgpu failed:` with nothing after it; `tools/programs.mjs` now runs the failed capture again alone and reports its own error (the values not found, or the part's exception).
+- A closure state whose capture fails never fails the table: it is left out, reported `SKIPPED` with that error in the regeneration's output, in a summary at the end and in a `# closure skipped` line of the manifest, and tried again by the next regeneration. A surveyed state's failure still fails the regeneration. The states a regeneration merges from runs go under a `# surveyed` line, so a closure block ends where they start.
+- The engine's program tables restamped for `src/render/extensions` (their programs are unchanged: every skinshade state they list has a direct light; a regenerated table, gi_shadow, came out identical but for that line). A game's tables need regenerating on this pin move, as the stamp check says. Gate `programs-closure-skip` (Node, mock GPU): a game part with skinshade under the sun and in a sunless scene regenerates with its closure and no state skipped, the sunless program without skinshade's values; a closure state whose part assumes the sun is skipped and reported with its error; control: the same state surveyed fails the regeneration. With v0.78.1's skinshade the first leg fails (the sunless state skipped, its values missing).
+
 ## v0.78.1 (2026-11-24)
 
 ### Fixed

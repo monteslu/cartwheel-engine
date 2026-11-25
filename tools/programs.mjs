@@ -251,18 +251,80 @@ function addClosureStates(manifest, logs) {
     throw new Error(`${manifest}: the variant closure adds ${c.add.length} states (${c.materials} materials, ${c.environments} environments), ` +
       `over its bound of ${max}: set "# closure-max: <n>" in the manifest to allow it, or "# closure: off"`);
   if (fromLogs.length || c.add.length) {
-    let out = text.replace(/\n?$/, '\n') + fromLogs.join('\n') + (fromLogs.length ? '\n' : '');
+    let out = text.replace(/\n?$/, '\n');
+    if (fromLogs.length) out += `# surveyed (tools/programs.mjs): ${fromLogs.length} state(s) the runs drew\n` + fromLogs.join('\n') + '\n';
     if (c.add.length) out += `# closure (tools/programs.mjs): ${c.add.length} state(s), the surveyed materials in the environments surveyed for their class\n` + c.add.join('\n') + '\n';
     writeFileSync(manifest, out);
   }
   console.log(`${basename(manifest)}: variant closure of ${c.materials} materials in ${c.environments} environments: +${c.add.length} state(s)`);
   return true;
 }
+// A closure block of a manifest: the states under a "# closure (tools/programs.mjs)" line, up to the next comment line
+// (a regeneration writes the states it merges from runs under a "# surveyed" line).
+const CLOSURE_HEAD = /^#\s*closure \(tools\/programs\.mjs\)/;
+const SKIPPED_HEAD = /^#\s*closure skipped \(tools\/programs\.mjs\)/;
+/** the manifest's closure states */
+function closureStatesOf(manifest) {
+  const out = new Set();
+  let inBlock = false;
+  for (const line of existsSync(manifest) ? readFileSync(manifest, 'utf8').split('\n') : []) {
+    const t = line.trim();
+    if (t.startsWith('#')) inBlock = CLOSURE_HEAD.test(t);
+    else if (t && inBlock) out.add(t.replace(/#.*/, '').trim());
+  }
+  return out;
+}
+/** a closure state out of the manifest, its block's line gone with its last state, a "# closure skipped" line for it */
+function skipClosureState(manifest, state, why) {
+  const lines = readFileSync(manifest, 'utf8').replace(/\n$/, '').split('\n').filter((l) => l.replace(/#.*/, '').trim() !== state);
+  const keep = lines.filter((l, i) => {
+    if (!CLOSURE_HEAD.test(l.trim())) return true;
+    for (let j = i + 1; j < lines.length; j++) { const t = lines[j].trim(); if (t.startsWith('#')) return false; if (t) return true; }
+    return false;
+  });
+  keep.push(`# closure skipped (tools/programs.mjs): ${state}: ${why.replace(/\s+/g, ' ')}`);
+  writeFileSync(manifest, keep.join('\n') + '\n');
+}
+/** the last regeneration's skipped lines out of the manifest: each regeneration tries its closure states again */
+function clearSkipped(manifest) {
+  if (!existsSync(manifest)) return;
+  const text = readFileSync(manifest, 'utf8');
+  const out = text.split('\n').filter((l) => !SKIPPED_HEAD.test(l.trim())).join('\n');
+  if (out !== text) writeFileSync(manifest, out);
+}
+function reportSkipped(name, skipped) {
+  console.error(`${name}: ${skipped.length} closure state(s) SKIPPED, their captures failed (the table lacks them; a draw in one is ` +
+    `drawn with the program that covers it, or reported missing):\n` + skipped.map((s) => `  ${s.state}: ${s.why}`).join('\n'));
+}
+/**
+ * The capture gen-project-table reports failed (three.c's tools/gen-programs.mjs: "capture <state> <backend> failed:
+ * <its child's stderr>"), and why: a capture that finds its state's values missing says so on its stdout and exits 1, so
+ * the child's stderr is empty; the capture runs again here, alone, and its own output is the reason.
+ * @returns {{ state: string, backend: string, why: string } | null}
+ */
+function failedCapture(stderr, genArgs) {
+  const m = /capture (\S+) (wgpu|gl) failed:([^\n]*)/.exec(stderr || '');
+  if (!m) return null;
+  const [, state, backend, said] = m;
+  const extend = genArgs.flatMap((a, i) => (genArgs[i - 1] === '--extend' ? ['--extend', resolve(a)] : []));
+  const out = join(BUILD, 'programs-cache', `.why-${process.pid}`);
+  mkdirSync(out, { recursive: true });
+  const r = spawnSync(process.execPath, [join(THREE, 'tools', 'gen-programs.mjs'), '--states', state, '--backend', backend, '--out', out,
+    '--single', '--mock-gpu', join(THREE, 'tools', 'gpu-answers.json'), ...extend],
+  { encoding: 'utf8', env: { ...process.env, GEN_ALLOW_UNCOVERED: '1' }, maxBuffer: 64 << 20 });
+  rmSync(out, { recursive: true, force: true });
+  const text = `${r.stdout || ''}\n${r.stderr || ''}`.split('\n').map((l) => l.trim()).filter(Boolean);
+  const why = text.find((l) => /missing:/.test(l))?.replace(/^.*?\(missing:/, 'its values were not found in the program (missing:')
+    || text.find((l) => /^(\w*Error|Error)\b|Error:/.test(l)) || said.trim() || text.at(-1)
+    || `exit ${r.status}${r.signal ? ' ' + r.signal : ''}`;
+  return { state, backend, why: why.replace(/\s+/g, ' ').slice(0, 400) };
+}
 /** regenerate one table from its manifest (plus missing logs) */
 function regenerate(manifest, logs = []) {
   const name = basename(manifest, '.txt');
   addLightmapChannelStates(manifest);
   addVeryLowWaterStates(manifest, logs);
+  clearSkipped(manifest);
   const closed = addClosureStates(manifest, logs);
   const own = manifestExtensions(manifest).filter((e) => !EXTENSIONS.includes(e));
   for (const e of own) {
@@ -287,8 +349,24 @@ function regenerate(manifest, logs = []) {
     ...composedModules([manifest, ...logs], parts).flatMap((e) => ['--extend', e]),
     ...(argv.includes('--fast') ? [] : ['--check'])];
   console.log(`${name}: regenerating (${dirname(manifest)})`);
-  const r = spawnSync(process.execPath, args, { stdio: 'inherit' }); // the capture runs on three.c's mock GPU: no device
-  if (r.status !== 0) throw new Error(`${name}: gen-project-table failed (${r.signal || 'exit ' + r.status})`);
+  // the capture runs on three.c's mock GPU: no device. A closure state whose capture fails is left out of the table and
+  // reported (the closure only guesses at a state no run drew); a surveyed state's failure fails the regeneration
+  const skipped = [];
+  for (;;) {
+    const r = spawnSync(process.execPath, args, { stdio: ['inherit', 'inherit', 'pipe'], encoding: 'utf8', maxBuffer: 256 << 20 });
+    if (r.stderr) process.stderr.write(r.stderr);
+    if (r.status === 0) break;
+    const f = failedCapture(r.stderr, args);
+    const why = f ? `capture ${f.state} ${f.backend} failed: ${f.why}` : `gen-project-table failed (${r.signal || 'exit ' + r.status})`;
+    if (!f || !closureStatesOf(manifest).has(f.state)) {
+      if (skipped.length) reportSkipped(name, skipped);
+      throw new Error(`${name}: ${why}`);
+    }
+    console.error(`${name}: closure state ${f.state} SKIPPED: ${why}`);
+    skipped.push({ state: f.state, why });
+    skipClosureState(manifest, f.state, why);
+  }
+  if (skipped.length) reportSkipped(name, skipped);
   // the captures ran on a mock GPU, which takes any WGSL: compile each WebGPU program with Dawn's own compiler
   // (Tint) as a host will, and fail here, not on the first WebGPU draw (tools/lib/wgsl-check.mjs)
   if (!argv.includes('--no-wgsl-check')) {

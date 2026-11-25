@@ -14,6 +14,8 @@
 #include "cartwheel/shading.h"
 #include "cartwheel/skin_shading.h"
 #include "test.h"
+
+bool cw__state_has_direct_light(const char *state); /* src/render/pipeline.c */
 #include "three.h"
 
 void cw__skin_shading_frame(void); /* src/render/skin_shading.c: follows the quality setting */
@@ -84,6 +86,17 @@ static void test_materials(void) {
   t3_material *basic = t3_mesh_basic_material_new(0xffffff);
   CHECK(!cw_skin_shading_apply(basic, NULL));
   t3_release(basic);
+  /* the programs skinshade's values live in (a direct light: the vector's first three counts or a lighting part); the
+   * others have none, and the pipeline's report of values a program lacks leaves them out (skinshade.mjs) */
+  CHECK(cw__state_has_direct_light("physical+vcol+skin+eon+l0001+xcsm_feather_skinshade"));
+  CHECK(cw__state_has_direct_light("physical+skin+l1001+xskinshade"));
+  CHECK(cw__state_has_direct_light("physical+skin+l0100+xskinshade_gi"));
+  CHECK(cw__state_has_direct_light("physical+skin+l0001+xcluster_skinshade"));
+  CHECK(cw__state_has_direct_light("physical+skin+l0001+xclusteries_skinshade"));
+  CHECK(cw__state_has_direct_light("physical+skin+xskinshade")); /* three.c's default vector, l1100 */
+  CHECK(!cw__state_has_direct_light("physical+vcol+skin+eon+l0001+xfeather_skinshade"));
+  CHECK(!cw__state_has_direct_light("physical+skin+l0001+xcsmx_skinshade_gi"));
+  CHECK(!cw__state_has_direct_light("physical+skin+l0000+xskinshade"));
   int32_t n = cw_skin_shading_count();
   FOLD(n);
   cw_res_release(r);

@@ -88,6 +88,31 @@ static bool no_cover(void) {
 static char dropped_text[8192] = "\n"; /* "\n<state> <uniform|texture> <name>\n..." */
 static int32_t dropped_count;
 bool cw__ext_miss_quiet;
+bool cw__ext_miss_direct_only;
+/* does a program state light anything through the lighting model's direct()? A directional, omni or spot light in its
+ * vector (lDPSH; a lit state without one has three.c's default l1100), or a part whose lights reach direct(): cluster,
+ * clusteries, csm (src/render/lighting.c) */
+bool cw__state_has_direct_light(const char *state) {
+  if (!state) return true;
+  bool vector = false;
+  for (const char *t = state; t; t = strchr(t, '+')) {
+    if (*t == '+') t++;
+    size_t len = strcspn(t, "+");
+    if (len == 5 && t[0] == 'l' && strspn(t + 1, "0123456789") >= 4) {
+      vector = true;
+      if (t[1] != '0' || t[2] != '0' || t[3] != '0') return true;
+    } else if (len > 1 && t[0] == 'x') {
+      for (const char *p = t + 1; p < t + len;) {
+        size_t n = strcspn(p, "_+");
+        if ((n == 3 && !strncmp(p, "csm", 3)) || (n == 7 && !strncmp(p, "cluster", 7)) || (n == 10 && !strncmp(p, "clusteries", 10))) return true;
+        p += n;
+        if (*p == '_') p++;
+        else break;
+      }
+    }
+  }
+  return !vector;
+}
 #ifdef T3_EXTENSION_MISS_HOOK
 static void ext_miss_hook(void *user, const char *state, const char *name, bool texture) {
   (void)user;
@@ -95,6 +120,8 @@ static void ext_miss_hook(void *user, const char *state, const char *name, bool 
    * depth program, which keeps only what shapes the geometry (a part's hook fills it as it fills the colour program;
    * a table out of date there is the build's stamp check's to catch) */
   if (cw__ext_miss_quiet || !strncmp(state, "depth", 5)) return;
+  /* a part whose terms all run in direct() (skinshade) has no values in a program without a direct light */
+  if (cw__ext_miss_direct_only && !cw__state_has_direct_light(state)) return;
   char line[400];
   snprintf(line, sizeof line, "\n%s %s %s\n", state, texture ? "texture" : "uniform", name);
   if (strstr(dropped_text, line)) return;

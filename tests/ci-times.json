@@ -130,6 +130,7 @@
   "programs-switch": 33,
   "programs-cover": 45,
   "programs-closure": 20,
+  "programs-closure-skip": 60,
   "shading-names-list": 1,
   "shading-names": 8,
   "action2d-crypt": 32,

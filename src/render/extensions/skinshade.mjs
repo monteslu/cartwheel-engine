@@ -13,15 +13,27 @@
 // Values (filled per material by src/render/skin_shading.c):
 //   ext.skinScatter       vec4: scatter colour (linear rgb), wrap
 //   ext.skinTranslucency  vec4: translucency, distortion, power, ambient
-// The depth (shadow caster) program carries nothing of this part.
+// The depth (shadow caster) program carries nothing of this part, and nor does a program with no direct light (no
+// directional, omni or spot light in its vector, no cluster or cascaded sun part: a scene without a sun, lit by its
+// hemisphere light and environment only): the model's direct() never runs there, so both terms are nothing, and the
+// hook's values are left out of the pipeline's report of values a program lacks (src/render/skin_shading.c).
 export const name = 'skinshade';
 export const part = 'skinshade';
 
 const LIT = new Set(['standard', 'physical']);
+/** the parts whose lights reach the model's direct() (src/render/lighting.c) */
+const DIRECT_PARTS = new Set(['cluster', 'clusteries', 'csm']);
+
+/** does the state's program light anything through direct()? (its vector's first three counts, or a lighting part) */
+function hasDirectLight(state, lights) {
+  if (!lights || lights.slice(0, 3).some((n) => n > 0)) return true;
+  const x = String(state).split('+').find((t) => /^x[a-z0-9_]+$/.test(t));
+  return !!x && x.slice(1).split('_').some((p) => DIRECT_PARTS.has(p));
+}
 
 export async function apply(ctx, next) {
   const { TSL, THREE, mat, props, sentinel, kind } = ctx;
-  if (kind === 'depth' || !LIT.has(kind)) return next ? next(ctx) : undefined;
+  if (kind === 'depth' || !LIT.has(kind) || !hasDirectLight(ctx.state, ctx.lights)) return next ? next(ctx) : undefined;
   const { uniform, normalView, positionViewDirection, diffuseContribution, BRDF_Lambert, float, max } = TSL;
   const v4 = (n) => {
     const s = [sentinel(), sentinel(), sentinel(), sentinel()];

@@ -19,6 +19,11 @@ const char *cw__programs_fix_command(void);
 /* an extension hook setting a value one variant of its part lacks on purpose: on around those sets, the pipeline's
  * report of values a program lacks (a table older than its extension) leaves them out */
 extern bool cw__ext_miss_quiet;
+/* an extension hook setting values only a program with a direct light has (a part whose terms all run in the lighting
+ * model's direct(): skinshade, src/render/extensions/skinshade.mjs): on around those sets, a program without one (a
+ * scene with no sun, lit by its hemisphere light) is left out of that report */
+extern bool cw__ext_miss_direct_only;
+bool cw__state_has_direct_light(const char *state);
 const char *cw__app_target_name(void); /* the app's target (its generated <app>_programs.c), src/render/programs.c */
 
 #define CW__QUERY_RING 64 /* a pass's queries in flight: up to four views a frame, many frames deep (a run flat out queues a lot) */
