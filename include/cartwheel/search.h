@@ -13,7 +13,7 @@
  *     evaluate. The reward (cw_search_options.reward) is the margin by default: a logistic of the player's lead
  *     over the best other player, 1 / (1 + e^(-lead / reward_scale)), so a win (CW_SEARCH_WIN) is 1 and a player
  *     behind still gains by closing the gap. CW_SEARCH_REWARD_PLACE (the place between the lowest and highest
- *     score, the only reward before v0.83.2) gives the last of three or four, and the one behind of two, 0 whatever
+ *     score, the only reward before v0.84.0) gives the last of three or four, and the one behind of two, 0 whatever
  *     it does: a CPU that falls behind then plays at random. See "The MCTS reward" below.
  *   - CW_SEARCH_GREEDY: every legal move applied once and evaluated (minimax at depth 1).
  *
@@ -139,7 +139,7 @@ typedef enum { CW_SEARCH_MINIMAX, CW_SEARCH_MCTS, CW_SEARCH_GREEDY } cw_search_k
 typedef enum {
   CW_SEARCH_REWARD_DEFAULT, /* 0: CW_SEARCH_REWARD_MARGIN */
   CW_SEARCH_REWARD_MARGIN,  /* a logistic of the player's lead over the best other player: 1 / (1 + e^(-lead / scale)) */
-  CW_SEARCH_REWARD_PLACE,   /* the player's place between the lowest and highest score (0..1); before v0.83.2 the only one */
+  CW_SEARCH_REWARD_PLACE,   /* the player's place between the lowest and highest score (0..1); before v0.84.0 the only one */
 } cw_search_reward;
 
 /* Zero fields take the defaults in brackets. */

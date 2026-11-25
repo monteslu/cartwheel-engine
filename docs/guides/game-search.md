@@ -44,7 +44,7 @@ Minimax averages over every listed outcome by weight (expectimax), or samples on
 MCTS scores each playout for every player with `options.reward` (a [cw_search_reward](api:cw_search_reward)):
 
 - `CW_SEARCH_REWARD_MARGIN` (the default): a logistic of the player's lead over the best other player, `1 / (1 + e^(-lead / reward_scale))`. Ahead it climbs toward 1, behind it falls toward 0, and every point of the gap counts on the way.
-- `CW_SEARCH_REWARD_PLACE`: the player's place between the lowest and highest score (0..1), the only reward before v0.83.2. The last of three or four players, and the player behind of two, scores 0 whatever it does, so a CPU that falls behind plays at random and falls further behind.
+- `CW_SEARCH_REWARD_PLACE`: the player's place between the lowest and highest score (0..1), the only reward before v0.84.0. The last of three or four players, and the player behind of two, scores 0 whatever it does, so a CPU that falls behind plays at random and falls further behind.
 
 `reward_scale` is in `evaluate`'s units: the lead worth 0.73. Set it to about a fifth of a typical winning margin in the game's points; the default, 4, is that for a race to 20. Too small and every lead past a few points saturates to 1 or 0, which makes a player far behind blind again; too large and the rewards flatten toward 0.5, so UCT needs more nodes to tell moves apart.
 

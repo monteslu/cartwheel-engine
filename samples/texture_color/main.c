@@ -15,7 +15,7 @@
  * quad's middle, -1 until read), tc.kind0..tc.kind4 (what that byte says: 1 colour, 128 +- 10; 0 data, 188 +- 10;
  * -1 neither or unread), tc.read (1 once every quad was read).
  * Switch (cw_test_env): TC_CONTROL=1 loads grey_claimed.png without cw_res_texture_set_srgb, the path before
- * v0.83.2, which must fail tc.cs1 and tc.kind1. */
+ * v0.84.0, which must fail tc.cs1 and tc.kind1. */
 #include <stdlib.h>
 #include <string.h>
 

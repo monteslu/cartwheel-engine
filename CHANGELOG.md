@@ -4,7 +4,7 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
-## v0.83.2 (2026-11-25)
+## v0.84.0 (2026-11-25)
 
 ### Added
 

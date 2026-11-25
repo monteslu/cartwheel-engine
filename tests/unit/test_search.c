@@ -962,7 +962,7 @@ void cw_test_late(void) {
   int twice = twice_pick(weak, CW_SEARCH_MINIMAX);
   cw_search_options oc = { .kind = CW_SEARCH_MCTS, .max_nodes = 4000, .seed = 12 };
   tally tp = versus_random(&PIG, &oc, 100, 2, reset_pig, NULL, weak);
-  /* a seat far behind closes the gap (the control: the place reward, before v0.83.2 the only one) */
+  /* a seat far behind closes the gap (the control: the place reward, before v0.84.0 the only one) */
   int trail = trailing_best(weak ? CW_SEARCH_REWARD_PLACE : CW_SEARCH_REWARD_DEFAULT, 4);
   if (weak)
     cw_info("search control: %d tic-tac-toe blunders, twice-in-a-row picked %d, %d dice wins of 100, a seat behind closed the gap %d of 20",
