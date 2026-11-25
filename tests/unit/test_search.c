@@ -6,12 +6,16 @@
  *   - one player moving twice in a row: the right move needs max at both of its nodes (never turns by parity);
  *   - chance: the root values at a dice roll equal the weighted average computed by hand (expectimax);
  *   - MCTS against uniform random play over many seeded games: tic-tac-toe, a dice game for two and for three;
+ *   - the MCTS reward: the default is the margin; a seat 30 points behind, which cannot win, still picks the move that
+ *     closes the gap on the margin and not on the place (0 whatever it does); the margin against the place head to
+ *     head at the dice game for two, three and four (measured, not checked: CW_SEARCH_SCALE and CW_SEARCH_GAMES
+ *     natively re-run the measurement behind the default, see search.h);
  *   - determinism: the same seed gives the same move, nodes and ranking; a search spread over ticks in slices gives
  *     the move and node count of an all-at-once run with the same node budget, minimax and MCTS; the background
  *     job gives the same move; a millisecond budget is kept; seeded mistakes at their rate.
  * Control (CW_TEST_SEARCH_WEAK=1): the late case runs the strength checks through a weakened player (minimax two
  * plies deep on tic-tac-toe, the twice-in-a-row game seen through a turn() that alternates, the MCTS seat replaced by random
- * play, the baseline the margin is measured against); each must fail. */
+ * play, the baseline the margin is measured against, the seat behind on the place reward); each must fail. */
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -650,6 +654,140 @@ static void test_mcts_vs_random(void) {
   FOLD(nodes);
 }
 
+/* ── the MCTS reward: the margin against the place ──────────────────── */
+/* a race for points: each turn the mover adds 0..3 to its score; after CLIMB_ROUNDS rounds the most points wins */
+#define CLIMB_ROUNDS 6
+typedef struct climb {
+  int16_t score[4];
+  int8_t turn, players, round, pad;
+} climb;
+static int climb_moves(const void *st, cw_search_move *out, int cap, void *u) {
+  (void)u; (void)st;
+  if (cap < 4) return 0;
+  for (int i = 0; i < 4; i++) out[i] = (cw_search_move)i;
+  return 4;
+}
+static void climb_apply(void *st, cw_search_move m, void *u) {
+  (void)u;
+  climb *c = st;
+  c->score[c->turn] = (int16_t)(c->score[c->turn] + (int)m);
+  if (++c->turn == c->players) c->turn = 0, c->round++;
+}
+static int climb_turn(const void *st, void *u) { (void)u; return ((const climb *)st)->turn; }
+static bool climb_over(const void *st, void *u) { (void)u; return ((const climb *)st)->round >= CLIMB_ROUNDS; }
+static void climb_eval(const void *st, float *s, void *u) {
+  (void)u;
+  const climb *c = st;
+  for (int i = 0; i < c->players; i++) s[i] = c->score[i];
+}
+static const cw_search_game CLIMB = { .players = 4, .state_size = sizeof(climb), .moves = climb_moves,
+                                      .apply = climb_apply, .turn = climb_turn, .terminal = climb_over,
+                                      .evaluate = climb_eval };
+
+/* how often a seat far behind (0 points against 30, 31, 32 with every round still to play: it cannot catch up)
+ * picks the move that closes the gap most (+3) over 20 seeds, under one reward */
+static float g_scale; /* the margin's scale under test (0: the default) */
+static int trailing_best(cw_search_reward reward, int players) {
+  climb c;
+  memset(&c, 0, sizeof c);
+  c.players = (int8_t)players;
+  for (int i = 1; i < players; i++) c.score[i] = (int16_t)(29 + i);
+  cw_search_game g = CLIMB;
+  g.players = players;
+  int best = 0;
+  for (int k = 0; k < 20; k++) {
+    cw_search_options o = { .kind = CW_SEARCH_MCTS, .max_nodes = 4000, .seed = (uint64_t)k + 1, .reward = reward,
+                              .reward_scale = g_scale };
+    cw_search *s = cw_search_new(&g, &o);
+    cw_search_move m = 0;
+    cw_search_run(s, &c, &m);
+    best += m == 3;
+    cw_search_free(s);
+  }
+  return best;
+}
+
+/* the dice game with one seat on options a and every other seat on b, the single seat taking each seat in turn;
+ * returns the single seat's wins */
+static int head_to_head(int players, const cw_search_options *a, const cw_search_options *b, int games,
+                        uint64_t seed) {
+  cw_search_game g = PIG;
+  g.players = players;
+  cw_search *sa = cw_search_new(&g, a), *sb = cw_search_new(&g, b);
+  cw_rng rng;
+  cw_rng_seed(&rng, seed);
+  int wins = 0;
+  for (int i = 0; i < games; i++) {
+    agent ag[CW_SEARCH_MAX_PLAYERS];
+    int seat = i % players;
+    for (int p = 0; p < players; p++) ag[p].s = p == seat ? sa : sb;
+    pig st = pig_new(players);
+    wins += play(&g, &st, ag, &rng, NULL) == seat;
+  }
+  cw_search_free(sa);
+  cw_search_free(sb);
+  return wins;
+}
+
+static void test_reward(void) {
+  if (getenv("CW_SEARCH_SCALE")) g_scale = (float)atof(getenv("CW_SEARCH_SCALE"));
+  /* the default is the margin */
+  cw_search_options d = { .kind = CW_SEARCH_MCTS, .max_nodes = 4000, .seed = 12 };
+  cw_search_options dm = d;
+  dm.reward = CW_SEARCH_REWARD_MARGIN;
+  pig p = pig_new(4);
+  p.score[1] = 9, p.score[2] = 12, p.score[3] = 14;
+  cw_search_game g4 = PIG;
+  g4.players = 4;
+  cw_search *s1 = cw_search_new(&g4, &d), *s2 = cw_search_new(&g4, &dm);
+  cw_search_move m1, m2;
+  cw_search_root_move r1[2], r2[2];
+  cw_search_run(s1, &p, &m1);
+  cw_search_run(s2, &p, &m2);
+  CHECK(cw_search_root_moves(s1, r1, 2) == 2 && cw_search_root_moves(s2, r2, 2) == 2);
+  CHECK(m1 == m2 && memcmp(r1, r2, sizeof r1) == 0);
+  cw_search_free(s1);
+  cw_search_free(s2);
+  /* a seat that cannot win still closes the gap on the margin; on the place it is 0 whatever it does (the last of
+   * four is always the lowest score, and with two players behind is 0), so it picks no better than chance */
+  int m4 = trailing_best(CW_SEARCH_REWARD_MARGIN, 4), m2p = trailing_best(CW_SEARCH_REWARD_MARGIN, 2);
+  int p4 = trailing_best(CW_SEARCH_REWARD_PLACE, 4), p2p = trailing_best(CW_SEARCH_REWARD_PLACE, 2);
+  cw_info("search: a seat 30 behind picks +3 in %d (four players) and %d (two) of 20 on the margin, %d and %d on the place",
+          m4, m2p, p4, p2p);
+  CHECK(m4 >= 15 && m2p >= 15);
+  CHECK(p4 <= 5 && p2p <= 5); /* the place's blindness, which the margin fixes */
+  FOLD(m4);
+  FOLD(p4);
+  /* head to head at the dice game: the margin against the place, as the single seat and as the rest */
+  for (int np = 2; np <= 4; np++) {
+    cw_search_options a = { .kind = CW_SEARCH_MCTS, .max_nodes = 4000, .seed = 21, .reward = CW_SEARCH_REWARD_MARGIN };
+    a.reward_scale = g_scale;
+    cw_search_options b = a;
+    b.reward = CW_SEARCH_REWARD_PLACE;
+    int games = (getenv("CW_SEARCH_GAMES") ? atoi(getenv("CW_SEARCH_GAMES")) : 60) * np;
+    int ma = head_to_head(np, &a, &b, games, 100 + (uint64_t)np), pa = head_to_head(np, &b, &a, games, 100 + (uint64_t)np);
+    cw_info("search: %d players, %d games: one margin seat against place seats won %d, one place seat against margin seats %d (a fair share %d)",
+            np, games, ma, pa, games / np);
+    FOLD(ma);
+    FOLD(pa);
+  }
+  /* the measurement behind the default, natively (CW_SEARCH_GAMES): each reward against random seats as well */
+  if (getenv("CW_SEARCH_GAMES")) {
+    int k = atoi(getenv("CW_SEARCH_GAMES"));
+    for (int np = 2; np <= 4; np++) {
+      cw_search_game g = PIG;
+      g.players = np;
+      int w[2];
+      for (int r = 0; r < 2; r++) {
+        cw_search_options o = { .kind = CW_SEARCH_MCTS, .max_nodes = 4000, .seed = 12, .reward_scale = g_scale,
+                                .reward = r ? CW_SEARCH_REWARD_PLACE : CW_SEARCH_REWARD_MARGIN };
+        w[r] = versus_random(&g, &o, k * np, (getenv("CW_SEARCH_SEED") ? (uint64_t)atoi(getenv("CW_SEARCH_SEED")) : 7) + (uint64_t)np, reset_pig, NULL, false).wins;
+      }
+      cw_info("search: %d players against random, %d games: margin won %d, place %d", np, k * np, w[0], w[1]);
+    }
+  }
+}
+
 /* ── determinism, ticks, background, time, mistakes ────────────────── */
 static bool same_run(const cw_search_game *g, const cw_search_options *o, const void *state, int64_t slice) {
   cw_search *a = cw_search_new(g, o), *b = cw_search_new(g, o);
@@ -824,14 +962,17 @@ void cw_test_late(void) {
   int twice = twice_pick(weak, CW_SEARCH_MINIMAX);
   cw_search_options oc = { .kind = CW_SEARCH_MCTS, .max_nodes = 4000, .seed = 12 };
   tally tp = versus_random(&PIG, &oc, 100, 2, reset_pig, NULL, weak);
+  /* a seat far behind closes the gap (the control: the place reward, before v0.83.2 the only one) */
+  int trail = trailing_best(weak ? CW_SEARCH_REWARD_PLACE : CW_SEARCH_REWARD_DEFAULT, 4);
   if (weak)
-    cw_info("search control: %d tic-tac-toe blunders, twice-in-a-row picked %d, %d dice wins of 100", blunders, twice,
-            tp.wins);
+    cw_info("search control: %d tic-tac-toe blunders, twice-in-a-row picked %d, %d dice wins of 100, a seat behind closed the gap %d of 20",
+            blunders, twice, tp.wins, trail);
   CHECK_EQ_INT(blunders, 0);
   CHECK_EQ_INT(twice, 0);
   CHECK(tp.wins >= 75);
+  CHECK(trail >= 15);
 }
 
 CW_TEST_SUITE("search", { "tictactoe", test_tictactoe }, { "connect4", test_connect4 }, { "twice", test_twice },
-              { "chance", test_chance }, { "mcts_vs_random", test_mcts_vs_random },
+              { "chance", test_chance }, { "mcts_vs_random", test_mcts_vs_random }, { "reward", test_reward },
               { "determinism", test_determinism }, { "time", test_time }, { "mistakes", test_mistakes })

@@ -426,12 +426,26 @@ struct t3_gltf;
 /* owned by the resource (valid while referenced). Its colour space is the
  * file's, as three.js r187's loaders give it: a KTX2's DFD transfer function
  * (cwpack's texture.color, sRGB by default), none (data) for PNG / JPEG,
- * unless a glTF that shows the image (as colour or as data) claimed it before
- * it loaded (a glTF that finds it loaded in the other one uploads its own). It
+ * unless the game (cw_res_texture_set_srgb) or a glTF that shows the image (as
+ * colour or as data: its material slot decides) said otherwise before it
+ * loaded (a glTF that finds it loaded in the other one uploads its own). It
  * is fixed when the resource loads (on GL the texels upload into an sRGB or a
- * linear format then): import a colour image as KTX2, rather than changing
+ * linear format then; on WebGPU into RGBA8UnormSrgb or RGBA8Unorm): say it
+ * with cw_res_texture_set_srgb before the load, rather than changing
  * color_space on the loaded texture. */
 struct t3_texture *cw_res_texture(cw_res res);
+/* Say how an image file's texture resource is sampled, before it is loaded:
+ * as colour (srgb true: albedo, emissive, sprite, card and UI art; stored
+ * sRGB and decoded to linear light when sampled, three.js r187's
+ * colorSpace = SRGBColorSpace) or as data (false: normal, roughness,
+ * metalness, occlusion, height, masks; the texels are the values). It
+ * overrides what the file says (a PNG or JPEG is data, a KTX2 what its DFD
+ * says) and holds for the path's life, hot reloads included. The first say
+ * decides, the game's or a glTF's: returns false (and changes nothing) when
+ * the resource is already loaded, or already claimed, the other way; true
+ * when it is, or will load, that way. A game that brightened colour art by
+ * hand to make up for it loading as data stops doing that when it calls this. */
+bool cw_res_texture_set_srgb(const char *path, bool srgb);
 struct t3_material *cw_res_material(cw_res res); /* owned by the resource (valid while referenced) */
 const cw_blob *cw_res_blob(cw_res res); /* for FONT / JSON / TEXT / BINARY; owned by the resource */
 const cw_audio_clip *cw_res_audio(cw_res res); /* owned by the resource */

@@ -12,6 +12,7 @@
 #include "cartwheel/search.h"
 
 #define INF_V 3.0e38f
+static void mcts_rewards(const struct cw_search *s, const float v[CW_SEARCH_MAX_PLAYERS], float r[CW_SEARCH_MAX_PLAYERS]);
 #define NP CW_SEARCH_MAX_PLAYERS
 
 static double now_ms(void) {
@@ -109,6 +110,7 @@ struct cw_search {
 
 static const cw_search_options DEFAULTS = { .max_depth = 64, .max_nodes = 200000, .mistake_spread = 3,
                                             .uct_c = 1.4f, .playout_depth = 24, .tree_nodes = 65536,
+                                            .reward = CW_SEARCH_REWARD_MARGIN, .reward_scale = 4.0f,
                                             .tt_entries = 65536 };
 
 void cw_search_level_options(int cpu_level, cw_search_kind kind, cw_search_options *out) {
@@ -151,6 +153,8 @@ cw_search *cw_search_new(const cw_search_game *game, const cw_search_options *op
   if (o->uct_c <= 0) o->uct_c = DEFAULTS.uct_c;
   if (o->playout_depth == 0) o->playout_depth = DEFAULTS.playout_depth;
   if (o->tree_nodes <= 0) o->tree_nodes = DEFAULTS.tree_nodes;
+  if (o->reward != CW_SEARCH_REWARD_MARGIN && o->reward != CW_SEARCH_REWARD_PLACE) o->reward = DEFAULTS.reward;
+  if (!(o->reward_scale > 0)) o->reward_scale = DEFAULTS.reward_scale;
   if (o->tt_entries == 0) o->tt_entries = DEFAULTS.tt_entries;
   if (o->mistake < 0) o->mistake = 0;
   if (o->mistake > 1) o->mistake = 1;
@@ -616,16 +620,10 @@ static void mcts_iteration(cw_search *s) {
     s->stats.nodes++;
     d++;
   }
-  /* rewards: each player's place between the lowest and highest score */
-  float v[NP] = { 0 }, r[NP];
+  float v[NP] = { 0 }, r[NP] = { 0 };
   s->g.evaluate(st, v, u);
   s->stats.nodes++;
-  float lo = INF_V, hi = -INF_V;
-  for (int p = 0; p < s->g.players; p++) {
-    if (v[p] < lo) lo = v[p];
-    if (v[p] > hi) hi = v[p];
-  }
-  for (int p = 0; p < NP; p++) r[p] = p < s->g.players ? (hi > lo ? (v[p] - lo) / (hi - lo) : 0.5f) : 0;
+  mcts_rewards(s, v, r);
   if (s->g.players == 1) r[0] = v[0]; /* one player: the raw value (the game keeps it in 0..1 for UCT's scale) */
   for (int i = 0; i < plen; i++) {
     mnode *n = &s->tree[s->path[i]];
@@ -633,6 +631,31 @@ static void mcts_iteration(cw_search *s) {
     if (i > 0) n->reward += r[n->mover];
   }
   s->stats.iterations++;
+}
+
+/* a playout's worth to each player, 0..1 (cw_search_reward) */
+static void mcts_rewards(const cw_search *s, const float v[NP], float r[NP]) {
+  int np = s->g.players;
+  if (s->o.reward == CW_SEARCH_REWARD_PLACE) { /* each player's place between the lowest and highest score */
+    float lo = INF_V, hi = -INF_V;
+    for (int p = 0; p < np; p++) {
+      if (v[p] < lo) lo = v[p];
+      if (v[p] > hi) hi = v[p];
+    }
+    for (int p = 0; p < np; p++) r[p] = hi > lo ? (v[p] - lo) / (hi - lo) : 0.5f;
+    return;
+  }
+  /* the margin: a logistic of the lead over the best other player, so a player behind still gains by closing the
+   * gap and a player ahead by widening it (cw_exp is the same on every host; its ends saturate to 0 and 1) */
+  for (int p = 0; p < np; p++) {
+    float best = -INF_V;
+    for (int q = 0; q < np; q++)
+      if (q != p && v[q] > best) best = v[q];
+    float lead = (v[p] - best) / s->o.reward_scale;
+    if (lead > 80) lead = 80;
+    if (lead < -80) lead = -80;
+    r[p] = 1.0f / (1.0f + cw_exp(-lead));
+  }
 }
 
 static void mcts_rank(cw_search *s) {

@@ -10,7 +10,11 @@
  *   - CW_SEARCH_MCTS: Monte Carlo tree search (UCT), for games with chance or more players. Open loop: the tree is
  *     keyed by moves, a chance event is sampled again on every iteration, so a hidden draw is never decided early.
  *     Playouts pick uniform moves (or the game's playout policy) for up to playout_depth moves, then score with
- *     evaluate. Rewards are each player's place between the lowest and highest score (0..1), so a win is 1.
+ *     evaluate. The reward (cw_search_options.reward) is the margin by default: a logistic of the player's lead
+ *     over the best other player, 1 / (1 + e^(-lead / reward_scale)), so a win (CW_SEARCH_WIN) is 1 and a player
+ *     behind still gains by closing the gap. CW_SEARCH_REWARD_PLACE (the place between the lowest and highest
+ *     score, the only reward before v0.83.2) gives the last of three or four, and the one behind of two, 0 whatever
+ *     it does: a CPU that falls behind then plays at random. See "The MCTS reward" below.
  *   - CW_SEARCH_GREEDY: every legal move applied once and evaluated (minimax at depth 1).
  *
  *   static const cw_search_game ttt = { .players = 2, .state_size = sizeof(board), .moves = ttt_moves,
@@ -57,6 +61,20 @@
  * another one, picked from the next `mistake_spread` best (weighted toward the better ones), drawn from the seed.
  * With mistakes on, minimax searches every root move with a full window so their values are exact. Shallower depth
  * and fewer nodes make a weaker player too; cw_search_level_options maps the shell's CPU levels to all three.
+ *
+ * ── The MCTS reward ───────────────────────────────────────────────────
+ * reward_scale is in evaluate's units: the lead worth 0.73, a lead of twice that 0.88, the same behind 0.27. Set it
+ * to a fifth or so of a typical winning margin in the game's points (the default, 4, is that for a race to 20).
+ * Too small saturates: every lead past a few scales is 1 or 0, and a player far behind is blind again; too large
+ * flattens the rewards toward 0.5 and UCT needs more nodes to tell moves apart. Measured on the dice game of
+ * tests/unit/test_search.c (a race to 20, 4000 nodes a move), one margin seat against place seats and the other
+ * way round, 480 / 720 / 960 games: at scale 4 the margin and the place were even with two players (242 and 239
+ * wins of a fair 240), and the margin was stronger with three (300 against 202 of 240) and four (287 against 192);
+ * against random seats the two won the same (365 and 363 of 400 with two players, 517 and 517 of 600 with three,
+ * 643 and 651 of 800 with four). Scale 8 was stronger head to head with two (283 against 194) but lost 2-player
+ * games to random seats the place wins (329 against 363 of 400); 16 and 32 lost 4-player games. A seat 30 points
+ * behind with no way to win chose the move that closes the gap most in 17 of 20 searches (four players) and 18
+ * (two) on the margin, 0 of 20 on the place.
  *
  * ── Threads ───────────────────────────────────────────────────────────
  * cw_search_step runs on the calling thread. cw_search_start_background runs the whole search on the job pool's
@@ -117,6 +135,13 @@ typedef struct cw_search_game {
 
 typedef enum { CW_SEARCH_MINIMAX, CW_SEARCH_MCTS, CW_SEARCH_GREEDY } cw_search_kind;
 
+/* What an MCTS playout is worth to each player (see the top of this file). */
+typedef enum {
+  CW_SEARCH_REWARD_DEFAULT, /* 0: CW_SEARCH_REWARD_MARGIN */
+  CW_SEARCH_REWARD_MARGIN,  /* a logistic of the player's lead over the best other player: 1 / (1 + e^(-lead / scale)) */
+  CW_SEARCH_REWARD_PLACE,   /* the player's place between the lowest and highest score (0..1); before v0.83.2 the only one */
+} cw_search_reward;
+
 /* Zero fields take the defaults in brackets. */
 typedef struct cw_search_options {
   cw_search_kind kind;
@@ -130,6 +155,8 @@ typedef struct cw_search_options {
   float uct_c;          /* MCTS exploration constant [1.4] */
   int playout_depth;    /* MCTS: moves per playout before evaluate; < 0: to the end (at most 1000) [24] */
   int tree_nodes;       /* MCTS: tree size; when full, iterations go on without growing it [65536] */
+  cw_search_reward reward; /* MCTS: what a playout is worth [MARGIN] */
+  float reward_scale;   /* MCTS margin reward: the lead, in evaluate's units, worth 0.73 (e / (1 + e)) [4] */
   int tt_entries;       /* minimax: transposition table entries, rounded up to a power of two; < 0: none [65536] */
 } cw_search_options;
 

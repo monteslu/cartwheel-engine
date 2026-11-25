@@ -970,6 +970,18 @@
     "note": "fine texture detail at a grazing angle, anisotropy 8 and mip chains (the floor's textures made in code, the wall's from the resource system, filtering set after the load): GL and WebGPU draw the same picture. Controls: anisotropy 1 (the picture moves), and anisotropy off on WebGPU alone (TF_CONTROL_WGPU), which must fail the GL-vs-WebGPU bound"
   },
   {
+    "name": "texture-color",
+    "app": "texture_color",
+    "webgpu": true,
+    "frames": 12,
+    "minColors": 3,
+    "fields": ["tc.cs0", "tc.cs1", "tc.cs2", "tc.cs3", "tc.cs4", "tc.kind0", "tc.kind1", "tc.kind2", "tc.kind3", "tc.kind4", "tc.read"],
+    "expect": { "tc.cs0": 0, "tc.cs1": 1, "tc.cs2": 1, "tc.cs3": 0, "tc.cs4": 1, "tc.kind0": 0, "tc.kind1": 1, "tc.kind2": 1, "tc.kind3": 0, "tc.kind4": 1, "tc.read": 1 },
+    "controlFrames": 12,
+    "controlEnv": { "TC_CONTROL": "1" },
+    "note": "an image file's texture resource as colour (sRGB) or data, read back on screen on GL and WebGPU: a flat grey 128 draws 128 through an unlit map as colour and about 188 as data. A plain PNG is data; the same PNG after cw_res_texture_set_srgb(path, true) is colour; cwpack KTX2 is colour with texture.color = srgb and by default, data with texture.color = linear (its DFD transfer function). Control: TC_CONTROL=1 loads the PNG without cw_res_texture_set_srgb (before v0.83.2 there was no public way), which must fail tc.cs1 and tc.kind1"
+  },
+  {
     "name": "physics-determinism",
     "app": "physics_determinism",
     "webgpu": true,

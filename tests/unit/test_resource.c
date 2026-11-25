@@ -326,6 +326,18 @@ static void test_textures(void) {
   CHECK(cw_res_texture_info(k, &ti));
   CHECK(ti.width == 64 && ti.height == 64 && ti.from_ktx2 && ti.levels == 7);
   CHECK(!strcmp(ti.format, cw_res_ktx2_target()));
+  /* colour or data: a PNG is data, cwpack's KTX2 is sRGB (its DFD, texture.color's default) */
+  CHECK(cw_res_texture(t) && cw_res_texture(t)->color_space == T3_NO_COLOR_SPACE);
+  CHECK(cw_res_texture(k) && cw_res_texture(k)->color_space == T3_SRGB_COLOR_SPACE);
+  /* said before the load, a PNG is colour; said the other way once it is loaded, nothing changes */
+  CHECK(cw_res_texture_set_srgb("res://textures/small.png", true));
+  CHECK(cw_res_texture_set_srgb("textures/small.png", true)); /* the same say again */
+  cw_res sm = cw_res_load("textures/small.png", 0);
+  CHECK(cw_res_texture(sm) && cw_res_texture(sm)->color_space == T3_SRGB_COLOR_SPACE);
+  CHECK(!cw_res_texture_set_srgb("textures/small.png", false));
+  CHECK(!cw_res_texture_set_srgb("textures/checker_k.png", false));
+  CHECK(cw_res_texture(sm)->color_space == T3_SRGB_COLOR_SPACE);
+  cw_res_release(sm);
   cw_res_release(t);
   cw_res_release(k);
 }

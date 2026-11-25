@@ -25,6 +25,8 @@ target_compile_definitions(static_batch_lit PRIVATE STATIC_BATCH_LIT=1)
 cw_add_app(toon_shading SOURCES toon_shading/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/toon_shading/project/roots.txt)
 # fine texture detail at grazing angles (anisotropic filtering, mip chains, sRGB albedo, normal maps): GL and WebGPU draw the same picture
 cw_add_app(texture_filtering SOURCES texture_filtering/main.c)
+# an image file's texture as colour (sRGB) or data, measured on screen: plain PNG, cw_res_texture_set_srgb, KTX2 sRGB / linear / default (cartwheel/resource.h)
+cw_add_app(texture_color SOURCES texture_color/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/texture_color/project/roots.txt)
 # the game shell's join screen opened during a match: seats added and dropped between rounds
 cw_add_app(shell_join SOURCES shell_join/main.c)
 # a hex board game for people and CPUs: hex grids (cartwheel/hex.h), CPU seats on the join screen, CPUs pressing actions (cw_input_set_actions) recorded and replayed

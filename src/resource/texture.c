@@ -406,6 +406,14 @@ bool cw__tex_res_claim(const char *path, bool srgb) {
   return true;
 }
 
+bool cw_res_texture_set_srgb(const char *path, bool srgb) {
+  if (!path) return false;
+  bool ok = cw__tex_res_claim(path, srgb);
+  if (!ok) cw_warn("res://%s: already %s; cw_res_texture_set_srgb(%s) changes nothing (call it before the first load)",
+                   path, srgb ? "data" : "colour (sRGB)", srgb ? "true" : "false");
+  return ok;
+}
+
 static void *tex_finish(void *decoded, cw_res self, const cw_res *deps, int n, void *u) {
   cw_tex_cpu *cpu = decoded;
   tex_payload *p = cw_calloc(1, sizeof *p, CW_MEM_RESOURCE);
