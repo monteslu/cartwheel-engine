@@ -4,6 +4,12 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.81.0 (2026-11-25)
+
+### Added
+
+- **Game-tree search** (`cartwheel/search.h`, guide: game-search): a computer player for turn-based games over game callbacks (legal moves in a fixed order, apply in place on the search's copy, optional undo, whose turn, terminal, every player's value, an optional state hash, chance outcomes with integer weights or a seeded chance resolver, move priority, a playout policy). Minimax (`CW_SEARCH_MINIMAX`): alpha-beta with iterative deepening, a transposition table keyed by the state hash (the state's bytes by default), the table's move then the game's priority first; two players on `score[me] - score[other]`, three or four players max-n by default or paranoid (`paranoid`); expectimax at chance nodes. MCTS (`CW_SEARCH_MCTS`): open-loop UCT with chance sampled anew every iteration, playouts cut at `playout_depth` and rewarded by each player's place between the lowest and highest score. Greedy (`CW_SEARCH_GREEDY`): one move deep. Up to four players; max or min is chosen per node from `turn()`, so a player may move several times in a row; a chance node is never a decision (out of mistakes, ordering and the root ranking; a root at a pending roll is refused). `cw_search_start`, `cw_search_step(s, ms, nodes)` per tick, `cw_search_result`; `cw_search_run` all at once; `cw_search_start_background` on the job pool's background queue with `cw_search_done`. Work counts in nodes (an apply or an evaluate): the same state, options and seed give the same move however the work is split over ticks and on every host; `time_ms` and a slice's `ms` add wall-clock limits. Difficulty is seeded mistakes (`mistake`, `mistake_spread`: a move from the next best, weighted toward the better) over a real search, plus depth and node caps; `cw_search_level_options` maps the shell's CPU Easy, Normal and Hard. `cw_search_get_stats` (nodes, depth, best before a mistake, the move played) and `cw_search_root_moves` (the ranking). Gate unit-search with control
+
 ## v0.79.0 (2026-11-25)
 
 ### Added

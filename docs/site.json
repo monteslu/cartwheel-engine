@@ -24,6 +24,7 @@
         "physics",
         "navigation",
         "hex-grids",
+        "game-search",
         "rendering-3d",
         "terrain",
         "noise",

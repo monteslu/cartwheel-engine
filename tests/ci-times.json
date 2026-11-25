@@ -420,6 +420,7 @@
   "shell-cpu-seats": 6,
   "shell-cpu-seats-touch": 5,
   "unit-hex": 3,
+  "unit-search": 4,
   "unit-input-set-actions": 3,
   "hex-board-hotseat": 10,
   "shell-hot-seats": 6
@@ -639,6 +640,7 @@
   "shell-cpu-seats": 8,
   "shell-cpu-seats-touch": 7,
   "unit-hex": 4,
+  "unit-search": 6,
   "hex-board-hotseat": 14,
   "shell-hot-seats": 8
  }

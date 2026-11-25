@@ -1676,6 +1676,18 @@
     "note": "hex grids (cartwheel/hex.h): every call against an independent answer (a breadth-first walk for distance and reach, the nearest centre by brute force for the hex under a point, adjacency for lines, a filter of a box for rings), both orientations, 2D and 3D, the four offset conventions, the hex map through growth and removal with sorted keys and a contents hash. The control checks point-to-hex and distance through the two usual mistakes (q and r rounded on their own, distance as max(|dq|, |dr|)), which must fail"
   },
   {
+    "name": "unit-search",
+    "app": "unit_search",
+    "webgpu": true,
+    "frames": 2,
+    "minColors": 1,
+    "fields": ["unit.passed", "unit.failed", "unit.checksum", "unit.done"],
+    "controlFrames": 2,
+    "expect": { "unit.failed": 0, "unit.done": 1 },
+    "controlEnv": { "CW_TEST_SEARCH_WEAK": "1" },
+    "note": "game-tree search (cartwheel/search.h) against independent answers: minimax keeps the solved value from all 4520 open tic-tac-toe positions (with and without the table, with undo) and draws itself; it finds the one winning move of two connect-four positions whose win is seven plies away (checked by brute force); a player moving twice in a row is maxed at both nodes (two players, max-n and paranoid); expectimax values at a die roll by hand; MCTS beats uniform random at tic-tac-toe and at a dice game for two and three players over seeded matches; sliced searches equal all-at-once ones with the same node budget (minimax, MCTS, chance, mistakes), the background job the same move; a 15 ms budget and 3 ms slices kept; seeded mistakes at their rate. The checksum folds node counts and match tallies, so the hosts agree on every search. The control plays the strength checks through a weakened player (minimax two plies deep, turns read as alternating, the MCTS seat replaced by random play: the baseline), which must fail"
+  },
+  {
     "name": "motion-demo",
     "app": "motion_demo",
     "webgpu": true,

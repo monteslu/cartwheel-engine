@@ -15446,6 +15446,145 @@
    "macros": []
   },
   {
+   "header": "cartwheel/search.h",
+   "summary": "cartwheel game-tree search: a computer player for turn-based games (board games, card games, puzzles).\n\nTwo searches over the same game callbacks:\n  - CW_SEARCH_MINIMAX: alpha-beta with iterative deepening, a transposition table keyed by the game's state hash\n    and move ordering (the table's best move first, then the game's priority, the root by the last iteration's\n    values). Two players: alpha-beta on score[me] - score[other]. Three or four players: max-n (every player\n    picks what is best for itself) by default, or paranoid (me against everyone, on score[me] - the best other\n    score) when cw_search_options.paranoid is set. Chance nodes (dice, draws) average their outcomes by weight\n    (expectimax) when the game lists them (outcomes), else take one outcome sampled from the seed.\n  - CW_SEARCH_MCTS: Monte Carlo tree search (UCT), for games with chance or more players. Open loop: the tree is\n    keyed by moves, a chance event is sampled again on every iteration, so a hidden draw is never decided early.\n    Playouts pick uniform moves (or the game's playout policy) for up to playout_depth moves, then score with\n    evaluate. Rewards are each player's place between the lowest and highest score (0..1), so a win is 1.\n  - CW_SEARCH_GREEDY: every legal move applied once and evaluated (minimax at depth 1).\n\n  static const cw_search_game ttt = { .players = 2, .state_size = sizeof(board), .moves = ttt_moves,\n                                      .apply = ttt_apply, .turn = ttt_turn, .terminal = ttt_over,\n                                      .evaluate = ttt_eval };\n  cw_search_options o;\n  cw_search_level_options(level, CW_SEARCH_MINIMAX, &o);          // the shell's CPU Easy / Normal / Hard\n  o.seed = match_seed ^ turn_number;\n  cw_search *s = cw_search_new(&ttt, &o);\n  cw_search_start(s, &board);                                     // when the CPU's turn begins\n  // each fixed_update: a slice of work; true when the answer is final\n  if (cw_search_step(s, 2.0f, 0)) { cw_search_move m; cw_search_result(s, &m); ... press it through actions ... }\n\n── The game ──────────────────────────────────────────────────────────\nA state is a block of state_size bytes the search copies (memcpy, or the game's copy). Keep it flat: no\npointers, padding zeroed (memset before filling), the game's random generator inside it. A move is a 64-bit code\nthe game packs (piece, from, to, a set of gems). A turn made of several decisions is one decision per move, and the\nsame player may move several times in a row: the search asks turn() at every node and never assumes turns\nalternate. List legal moves in a fixed order (ties go to the earlier move).\n\nevaluate fills score[0..players-1], each from that player's view, larger better. At a terminal state it is the\nresult: put wins and losses in bands no heuristic reaches (CW_SEARCH_WIN, CW_SEARCH_LOSS) and subtract the number\nof moves played from a win, so a faster win scores higher; the search does not adjust values by depth.\n\nChance: when the next thing to happen is random (a roll, a card from a hidden deck, a market refill), turn()\nanswers CW_SEARCH_CHANCE. outcomes() lists the possible results as move codes with integer weights, and the search\nplays one with the ordinary apply() (undo() takes it back) while turn() == CW_SEARCH_CHANCE. chance() instead\nresolves the event itself from the search's random generator. Give either or both: minimax uses outcomes (all of\nthem, averaged) or else samples chance; MCTS samples chance, or else picks from outcomes by weight. A chance node\nis never a player's decision: it is left out of mistakes, move ordering and the root ranking, and a root that is a\nchance node is refused (resolve it in the match first).\n\n── Budgets and determinism ───────────────────────────────────────────\nWork is counted in nodes: one apply or one evaluate, in every kind. Given the same state, options and seed, the\nanswer depends only on max_nodes, max_depth and the game: never on how the work is split over ticks or which host\nruns it. cw_search_step(s, ms, nodes) runs one slice: it stops at the slice's node count or its milliseconds, only\nbetween whole units (a node in minimax, a whole iteration in MCTS), so a search spread over twenty ticks gives the\nmove an all-at-once run gives. A millisecond limit (the slice's ms, or options.time_ms over the whole search) ends\nwork by the wall clock, so with one the answer can differ per host and per run: keep gates, tests and replays on\nnode budgets (record the CPU's move through the input path, cw_input_set_actions, and a replay never searches).\n\n── Difficulty ────────────────────────────────────────────────────────\nSeeded mistakes over a real search: once the root moves are ranked, with probability `mistake` the move played is\nanother one, picked from the next `mistake_spread` best (weighted toward the better ones), drawn from the seed.\nWith mistakes on, minimax searches every root move with a full window so their values are exact. Shallower depth\nand fewer nodes make a weaker player too; cw_search_level_options maps the shell's CPU levels to all three.\n\n── Threads ───────────────────────────────────────────────────────────\ncw_search_step runs on the calling thread. cw_search_start_background runs the whole search on the job pool's\nbackground queue (cartwheel/jobs.h) while the game keeps drawing; the callbacks then run on a worker, so they must\ntouch only the state they are given. Poll cw_search_done; with no workers the job runs at once on the caller.",
+   "functions": [
+    {
+     "name": "cw_search_level_options",
+     "signature": "void cw_search_level_options(int cpu_level, cw_search_kind kind, cw_search_options *out)",
+     "doc": "The shell's CPU levels (cw_shell_cpu_level: 0 Easy, 1 Normal, 2 Hard) as options for kind; seed and kind are the\nonly other fields set. Easy: mistake 0.35, depth 2, 20000 nodes; Normal: mistake 0.1, depth 4, 100000 nodes; Hard: no\nmistakes, the defaults (depth 64, 200000 nodes). A game tunes from there.",
+     "inline": false
+    },
+    {
+     "name": "cw_search_new",
+     "signature": "cw_search *cw_search_new(const cw_search_game *game, const cw_search_options *options)",
+     "doc": "game and options are copied. NULL when the game lacks moves, apply, turn, terminal or evaluate, or players or\nstate_size is out of range",
+     "inline": false
+    },
+    {
+     "name": "cw_search_free",
+     "signature": "void cw_search_free(cw_search *s)",
+     "doc": "waits for a background search first; NULL is a no-op",
+     "inline": false
+    },
+    {
+     "name": "cw_search_start",
+     "signature": "bool cw_search_start(cw_search *s, const void *state)",
+     "doc": "Starts a search for the player to move in state (copied; the caller's state is never touched). false when the\nstate is terminal or a chance node; a root with one legal move is done at once. Restarts any search.",
+     "inline": false
+    },
+    {
+     "name": "cw_search_step",
+     "signature": "bool cw_search_step(cw_search *s, float ms, int64_t nodes)",
+     "doc": "One slice of work: until `nodes` more nodes (0: no node limit for the slice) or `ms` milliseconds (0: none) have\ngone, or the search is done. true when the answer is final.",
+     "inline": false
+    },
+    {
+     "name": "cw_search_run",
+     "signature": "bool cw_search_run(cw_search *s, const void *state, cw_search_move *move)",
+     "doc": "Starts and runs to the end on the calling thread; the chosen move in *move (may be NULL). false as start.",
+     "inline": false
+    },
+    {
+     "name": "cw_search_start_background",
+     "signature": "bool cw_search_start_background(cw_search *s, const void *state)",
+     "doc": "Starts the search (as cw_search_start) on the job pool's background queue; poll cw_search_done.",
+     "inline": false
+    },
+    {
+     "name": "cw_search_done",
+     "signature": "bool cw_search_done(cw_search *s)",
+     "doc": "finished (a background job too); false before any start",
+     "inline": false
+    },
+    {
+     "name": "cw_search_result",
+     "signature": "bool cw_search_result(const cw_search *s, cw_search_move *move)",
+     "doc": "The chosen move (mistakes applied) once done; false before.",
+     "inline": false
+    },
+    {
+     "name": "cw_search_get_stats",
+     "signature": "void cw_search_get_stats(const cw_search *s, cw_search_stats *out)",
+     "doc": "What the last search did (zeros before any start); safe while a background search runs only once it is done.",
+     "inline": false
+    },
+    {
+     "name": "cw_search_root_moves",
+     "signature": "int cw_search_root_moves(const cw_search *s, cw_search_root_move *out, int cap)",
+     "doc": "The root moves, best first, as ranked by the last completed work; returns the count written (at most cap).",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_search_move",
+     "doc": "",
+     "decl": "typedef uint64_t cw_search_move; /* a game-packed decision or chance outcome */"
+    },
+    {
+     "name": "cw_search_game",
+     "doc": "",
+     "decl": "typedef struct cw_search_game {\n  int players;       /* 1..4 */\n  size_t state_size; /* bytes the search keeps per copy */\n  /* copies a state into a block of state_size bytes; NULL: memcpy */\n  void (*copy)(void *dst, const void *src, void *user);\n  /* the legal moves of the player to move, in a fixed order; returns the count (<= cap). Never 0 at a state that\n   * is not terminal: a player with nothing to do gets a pass move */\n  int (*moves)(const void *state, cw_search_move *out, int cap, void *user);\n  /* plays a move (or, at a chance node, an outcome) in place, on the search's own copy */\n  void (*apply)(void *state, cw_search_move move, void *user);\n  /* optional: takes apply back exactly; minimax then works on one state instead of a copy per ply */\n  void (*undo)(void *state, cw_search_move move, void *user);\n  /* who decides next: 0..players-1, or CW_SEARCH_CHANCE. Not asked at terminal states */\n  int (*turn)(const void *state, void *user);\n  bool (*terminal)(const void *state, void *user);\n  /* every player's value of the state, from that player's view (see the top of this file) */\n  void (*evaluate)(const void *state, float score[CW_SEARCH_MAX_PLAYERS], void *user);\n  /* optional: the transposition table key (whose turn it is included). NULL with copy NULL: cw_hash_bytes over the\n   * state's bytes, seed 0; NULL with a copy: no table */\n  uint64_t (*hash)(const void *state, void *user);\n  /* optional: resolves a pending chance event in place from rng (a die rolled, a card drawn) */\n  void (*chance)(void *state, cw_rng *rng, void *user);\n  /* optional: move ordering for minimax, higher first (stable: equal priorities keep the list order) */\n  float (*priority)(const void *state, cw_search_move move, void *user);\n  /* optional: the MCTS playout policy, one of moves[0..n-1]; NULL: uniform */\n  cw_search_move (*playout)(const void *state, const cw_search_move *moves, int n, cw_rng *rng, void *user);\n  void *user; /* passed to every callback */\n  /* optional:  ..."
+    },
+    {
+     "name": "cw_search_kind",
+     "doc": "",
+     "decl": "typedef enum { CW_SEARCH_MINIMAX, CW_SEARCH_MCTS, CW_SEARCH_GREEDY } cw_search_kind;"
+    },
+    {
+     "name": "cw_search_options",
+     "doc": "Zero fields take the defaults in brackets.",
+     "decl": "typedef struct cw_search_options {\n  cw_search_kind kind;\n  uint64_t seed;        /* mistakes, MCTS, sampled chance; derive it from the match (seed, turn number) for replays */\n  int max_depth;        /* minimax: the deepest iteration, in decisions (chance nodes do not count) [64] */\n  int64_t max_nodes;    /* the deterministic budget: applies + evaluates [200000] */\n  float time_ms;        /* a wall-clock budget over the whole search; 0: none (not deterministic when set) */\n  bool paranoid;        /* minimax with 3-4 players: me against everyone instead of max-n (ignored at 2) */\n  float mistake;        /* 0..1: the seeded chance of playing a worse move [0] */\n  int mistake_spread;   /* a mistake picks among the next this-many best moves [3] */\n  float uct_c;          /* MCTS exploration constant [1.4] */\n  int playout_depth;    /* MCTS: moves per playout before evaluate; < 0: to the end (at most 1000) [24] */\n  int tree_nodes;       /* MCTS: tree size; when full, iterations go on without growing it [65536] */\n  int tt_entries;       /* minimax: transposition table entries, rounded up to a power of two; < 0: none [65536] */\n} cw_search_options;"
+    },
+    {
+     "name": "cw_search",
+     "doc": "",
+     "decl": "typedef struct cw_search cw_search;"
+    },
+    {
+     "name": "cw_search_stats",
+     "doc": "",
+     "decl": "typedef struct cw_search_stats {\n  int64_t nodes;          /* applies + evaluates */\n  int64_t iterations;     /* MCTS iterations; minimax completed depths */\n  int depth;              /* minimax: the deepest completed iteration */\n  int steps;              /* cw_search_step calls that did work */\n  int root_moves;\n  int tree_nodes;         /* MCTS: nodes in the tree */\n  int64_t tt_hits;        /* minimax: table answers that cut a node */\n  cw_search_move best;    /* the best move before any mistake */\n  float best_value;       /* its value: the minimax value, or MCTS mean reward 0..1 */\n  cw_search_move chosen;  /* the move played */\n  bool mistake_made;\n  double elapsed_ms;      /* wall time spent */\n} cw_search_stats;"
+    },
+    {
+     "name": "cw_search_root_move",
+     "doc": "A root move as ranked by cw_search_root_moves.",
+     "decl": "typedef struct cw_search_root_move {\n  cw_search_move move;\n  float value; /* minimax: its value (a bound for a pruned move when mistakes are off); MCTS: mean reward 0..1 */\n  int visits;  /* MCTS playouts through it; minimax 0 */\n} cw_search_root_move;"
+    }
+   ],
+   "macros": [
+    {
+     "name": "CW_SEARCH_MAX_PLAYERS",
+     "doc": ""
+    },
+    {
+     "name": "CW_SEARCH_MAX_MOVES",
+     "doc": ""
+    },
+    {
+     "name": "CW_SEARCH_MAX_PLY",
+     "doc": ""
+    },
+    {
+     "name": "CW_SEARCH_CHANCE",
+     "doc": ""
+    },
+    {
+     "name": "CW_SEARCH_WIN",
+     "doc": ""
+    },
+    {
+     "name": "CW_SEARCH_LOSS",
+     "doc": ""
+    },
+    {
+     "name": "CW_SEARCH_MOVE_NONE",
+     "doc": ""
+    }
+   ]
+  },
+  {
    "header": "cartwheel/shading.h",
    "summary": "cartwheel/shading.h: shading parts, three.c generator extensions that\nstack on one material.\n\nthree.c gives a material one generator extension (t3_material_set_extension,\nstate x<name>): r187 TSL captured into a program, filled at run time by a C\nhook. Several engine features change how every surface shades (terrain or\nwater decide the surface, clustered lights add direct light, the GI module\nadds reflections and bounce light), so one material often needs more than\none. A part is one such extension; a material carries a list of parts, and\nits extension is the composed name: the parts in the fixed order below,\njoined by '_' (\"terrain_gi\", \"cluster_gi\"). Nothing is written by hand per\ncombination:\n\n  - the generator side: a part is a module src/<module>/extensions/<part>.mjs\n    (export name, apply()), as any extension. tools/programs.mjs writes, for\n    every composed state a manifest names (standard+senv+xcluster_gi), a\n    module that applies the parts in that order to the capture's material,\n    and hands it to three.c's generator. Surface parts set colorNode,\n    normalNode, positionNode; lighting parts add an r187 LightingNode to the\n    material's lights; the GI part sets envNode (reflections) and adds a\n    LightingNode (the probe grid's irradiance). So parts compose without\n    knowing each other, as long as each names its uniforms and textures\n    \"ext.<unique name>\" and its shared uniform groups uniquely.\n  - the run-time side: each part registers its fill hook on a renderer\n    (cw_shading_part); a composed extension's hook calls every part's hook\n    in order on the same draw.\n\nOrder (fixed, global): the engine's surface parts (terrain, terrainlow, terrainfx,\nterrainfar, water), then lighting (cluster), then indirect light (gi, and\ngibuf for the screen-space passes' G-buffer); any other part, a game's own\nsurfaces among them (cartwheel/surface.h), between lighting and indirect,\nby name. A material takes up to CW_SHADING_MAX_PARTS parts and a composed\nname of up to 63 characters.\n\nA game's part. cw_shading_part with a fill hook of the game's own composes\nwith the lighting parts (cluster, csm, plain). Say what the part is with\ncw_shading_part_traits and the rest of the engine takes it too:\nCW_PART_SURFACE lets the probes (gi), the G-buffer and mesh decals compose\nwith it. cartwheel/surface.h does all of that for a surface written as a\nmodule with named parameters, with no hook to write.\n\nCost: none per part beyond its own hook. three.c does not auto-instance a\nmesh whose material carries an extension (each such mesh is its own draw)\nunless every part of it says its hook reads nothing of the object\n(cw_shading_part_batching): then meshes sharing geometry and material are\none instanced draw, as plain ones are.",
    "functions": [

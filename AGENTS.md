@@ -213,6 +213,13 @@ that seat (`cw_input_assign_pads`).
 **Hex boards** (`hex.h`, [hex grids](docs/guides/hex-grids.md)): `cw_axial` hexes, neighbours, distance, rings, lines,
 rotation, `cw_hex_to_world` / `cw_hex_from_world` for a pointy or flat layout, and `cw_hex_map` for a board's contents.
 
+**Game-tree search** (`search.h`, [game search](docs/guides/game-search.md)): a CPU for a turn-based game over callbacks
+(legal moves, apply, whose turn, terminal, per-player evaluate, chance outcomes). Minimax (alpha-beta, iterative deepening,
+a transposition table, max-n or paranoid for 3-4 players) or MCTS for chance and more players. `cw_search_start(s, &state)`
+when the CPU's turn begins, `cw_search_step(s, 2.0f, 4000)` each tick until it returns true, then `cw_search_result`;
+press the move through `cw_input_set_actions`. Same seed and node budget, same move, however it is split over ticks.
+`cw_search_level_options(level, kind, &o)` maps the shell's CPU levels to seeded mistakes and budgets.
+
 **Audio** (`audio.h`, [audio](docs/guides/audio.md)): `cw_sound s = cw_sound_load("res://sfx/hit.wav", NULL);`
 `cw_audio_play(s, &(cw_play_desc){ .bus = cw_shell_sfx_bus() });` music on `cw_shell_music_bus()`; 3D sound and
 reverb zones in the guide. In a scene: `AudioStreamPlayer`, `AudioStreamPlayer2D`, `AudioStreamPlayer3D` nodes
