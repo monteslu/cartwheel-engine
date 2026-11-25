@@ -4,6 +4,12 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.83.1 (2026-11-25)
+
+### Fixed
+
+- **Main CI green again.** Gate native-pads expects eight seats in `players.jump_jp` and `players.axis` (`CW_INPUT_MAX_PLAYERS` is 8 since v0.79.0). The engine is v0.83.0's.
+
 ## v0.83.0 (2026-11-25)
 
 ### Added
@@ -13,8 +19,6 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 - **Cinematic director** (`cartwheel/director.h`): shots by type and subjects (wide, establish, two, over the shoulder, medium close-up, close-up, push, react, insert, hero, whip, top, release) solved against the game's subjects (eyes, chest, feet, facing, hands) and its world (a ray callback) every frame, ported from keyholder's director (MIT, see NOTICE). Candidates are scored for a clear view of the face, the face toward the lens, nobody's head, hair or body across the line to it, the subject's own hands off it, nothing solid in front of the lens, the face in frame and near the middle, the 180-degree line and cut variety; while a shot runs it is scored again every frame, a placement someone is about to walk into (everyone moved on by their speed) is changed by a cut before they cross, and a close-up with no clean placement steps back to a medium close-up or a wide. The camera never shakes: no handheld noise or roll, every move eased; `cw_director_release` eases back to the game's camera. `cw_director_cut_story` takes a story's shot beats. Measures for gates (`cw_director_measure`, debug fields `dir.*`): frames something blocked the face, close-up frames on the back of a head, frames the face left the picture, and shake (motion turning back on itself faster than 5 Hz).
 - Samples `story_scene` (a voiced scene on the pad with faces, subtitles, choices and the director's shots), `speech_face` (a close-up speaking every line with each emotion) and `director_shots` (every shot type, a passer-by walking through a close-up, the walls).
 - Gates `unit-story` (every path of the sample's scene, the timeout default, a skip ending in the defaults' state, pools, saves, malformed data refused, a speech pack's lengths and mouth; control: pools that may repeat), `unit-director` and `unit-director-shake` (each shot type framed, a passer-by, a turn away, a raised hand's insert, the 180-degree line, a release; controls: no solving, and 1 cm of handheld noise), `story-scene` (control: another option), `story-skip` (control: a half-second hold), `story-barks` (control: repeats allowed), `speech-face` (the jaw follows the voice, joy smiles, surprise lifts the brows; control: the face never driven), `director-shots` (control: no solving, where the passer-by crosses the close-up), `director-shake` (control: handheld noise), all on GL and WebGPU; `story-tools` (no GPU: the committed outputs current, errors refused at their line, pack keys, ADPCM within 3%; control: a changed script fails `--check`).
-
-## v0.82.0 (2026-11-25)
 
 ### Fixed
 
