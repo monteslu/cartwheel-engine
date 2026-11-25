@@ -422,6 +422,7 @@
   "unit-hex": 3,
   "unit-search": 4,
   "unit-input-set-actions": 3,
+  "unit-input-cart-touch": 3,
   "hex-board-hotseat": 10,
   "shell-hot-seats": 6
  },

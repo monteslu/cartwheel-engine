@@ -4,6 +4,12 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.82.0 (2026-11-25)
+
+### Fixed
+
+- **Gate unit-input passes in a cart** (GL and WebGPU on romdev; it failed 21 touch-control checks in every cart since v0.50.0, unseen because CI runs it natively only). In a cart the host draws the on-screen pad and the engine's touch controls are off unless the gate switch `CW_TEST_TOUCH_CONTROLS=1` is set, and the suite ran its touch-control cases in init, where `cw_test_env` answers nothing yet (frame 0), with the gate not setting the switch at all. The touch-control cases now run late (`cw_test_late`), the gate sets the switch, and a new case (touch_host) checks in init what each host does with a touch on a control: native claims it, a cart leaves it to the game as a pointer and draws nothing. unit-input-set-actions runs on the carts too. New gate unit-input-cart-touch runs the suite natively under a cart's touch rule (the gate switch `CW_TEST_CART_TOUCH=1`, native only), so CI, which has no cart host, catches this; its control, the switch off, fails the same 21 checks
+
 ## v0.81.0 (2026-11-25)
 
 ### Added

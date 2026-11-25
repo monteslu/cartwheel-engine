@@ -12,7 +12,8 @@
  * manifest's controls): the controls here claim no touch, so every touch
  * reaches the game as a pointer, and nothing is drawn (cw_touch_controls_on).
  * CW_TEST_TOUCH_CONTROLS=1 (cw_test_env) keeps them on in a cart: the old
- * behaviour, a gate's control. */
+ * behaviour, a gate's control. CW_TEST_CART_TOUCH=1 applies the cart's rule to a
+ * native run (CI's check of it). */
 #include <math.h>
 #include <string.h>
 
@@ -32,13 +33,20 @@ static uint32_t overlay_drawn; /* debug field cw.touch_overlay: controls drawn l
 
 static bool valid_id(int id) { return I.init && id >= 0 && id < I.ncontrols; }
 
+/* Natively CW_TEST_CART_TOUCH=1 (a gate switch, read once) gives a native run a cart's rule: the controls off unless
+ * CW_TEST_TOUCH_CONTROLS=1, which cw_test_env answers from frame 1 on, as a cart host delivers it. CI has no cart
+ * host, so this is how it checks a suite against that rule (gate unit-input-cart-touch). */
 bool cw_touch_controls_on(void) {
-#if CW_CART
+#if !CW_CART
+  static int cart_rule = -1;
+  if (cart_rule < 0) {
+    const char *c = getenv("CW_TEST_CART_TOUCH");
+    cart_rule = c && atoi(c) > 0;
+  }
+  if (!cart_rule) return true;
+#endif
   const char *e = cw_test_env("CW_TEST_TOUCH_CONTROLS"); /* NULL in the first frame (cartwheel/debug.h) */
   return e && atoi(e) > 0;
-#else
-  return true;
-#endif
 }
 
 /* ── layout ───────────────────────────────────────────────────────── */

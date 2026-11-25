@@ -3,6 +3,7 @@
  * cannot script (a press inside one frame's event batch, frames with no
  * tick), deadzones, vectors, text bindings, capture, touch, replay and actions
  * the game sets for a CPU seat (with the control CW_TEST_SET_UNRECORDED). */
+#include <stdlib.h>
 #include <string.h>
 
 #include "cartwheel/aim.h"
@@ -711,7 +712,48 @@ static uint32_t toy_run(bool record, const uint8_t *replay, size_t replay_len, b
   return cw_hash32(&g, sizeof g, CW_HASH32_INIT);
 }
 
+/* The touch controls' owner on this host, read in init (before any gate switch reaches a cart): natively the engine's
+ * controls claim touches and draw; in a cart the wasmcart host draws the on-screen pad, so a touch on a control is
+ * the game's pointer, the control stays idle, its action is not pressed and nothing is drawn (cw_touch_controls_on).
+ * CW_TEST_CART_TOUCH=1 gives a native run the cart's rule (gate unit-input-cart-touch, in CI). */
+static bool cart_rule(void) {
+  const char *c = CW_CART ? NULL : getenv("CW_TEST_CART_TOUCH");
+  return CW_CART || (c && atoi(c) > 0);
+}
+static void test_touch_host(void) {
+  fresh();
+  cw_action fire = cw_action_add("fire", 0.5f);
+  int btn = cw_touch_add_button(500, 300, 100, 60);
+  char spec[32];
+  snprintf(spec, sizeof spec, "touch:%d", btn);
+  CHECK(cw_action_bind_text(fire, spec));
+  raw.touches[0] = (cw_touch_state){ .active = true, .tapped = true, .x = 550, .y = 330 };
+  seen s = run_frame(fire, 1);
+  CHECK_EQ_INT(cw_touch_controls_on(), !cart_rule());
+  CHECK_EQ_INT(cw_touch_control_active(btn), !cart_rule());
+  CHECK_EQ_INT(s.jp, !cart_rule());
+  cw_touch_set_overlay(CW_TOUCH_OVERLAY_ALWAYS);
+  CHECK_EQ_INT(cw_touch_overlay_visible(), !cart_rule());
+  cw_touch_set_overlay(CW_TOUCH_OVERLAY_AUTO);
+  raw.touches[0] = (cw_touch_state){ 0 };
+  run_frame(fire, 1);
+}
+
+/* The engine's touch controls themselves (claiming, steering, layout, the overlay). In a cart they are on only with
+ * the gate switch CW_TEST_TOUCH_CONTROLS=1 (the unit-input gate sets it), which cw_test_env answers from the first
+ * frame a cart host has delivered it: so these run late, not in init. Without the switch a cart fails them (the
+ * controls claim nothing): the gate's must-fail check. */
+static void touch_cases(void) {
+  int before = cw_test_failed;
+  test_touch();
+  test_thumbstick();
+  test_rect_stick_home();
+  cw_info("input.touch_controls (late, controls %s): %s", cw_touch_controls_on() ? "on" : "off",
+          cw_test_failed == before ? "ok" : "FAILED");
+}
+
 void cw_test_late(void) {
+  touch_cases();
   toy live, again, bare;
   uint32_t live_h = toy_run(true, NULL, 0, true, &live);
   uint32_t rec_hash = cw_input_record_hash(), stream = cw_input_stream_hash();
@@ -816,4 +858,4 @@ static void test_aim(void) {
 
 CW_TEST_SUITE("input", { "tick_latch", test_tick_latch }, { "strength_vector", test_strength_and_vector },
               { "players", test_players }, { "text", test_text }, { "capture", test_capture },
-              { "touch", test_touch }, { "thumbstick", test_thumbstick }, { "rect_stick_home", test_rect_stick_home }, { "record_replay", test_record_replay }, { "set_actions", test_set_actions }, { "pad_routing", test_pad_routing }, { "aim", test_aim })
+              { "touch_host", test_touch_host }, { "record_replay", test_record_replay }, { "set_actions", test_set_actions }, { "pad_routing", test_pad_routing }, { "aim", test_aim })

@@ -166,14 +166,14 @@
   {
     "name": "unit-input-set-actions",
     "app": "unit_input",
-    "hosts": ["native"],
     "frames": 2,
     "minColors": 1,
     "fields": ["unit.passed", "unit.failed", "unit.checksum", "unit.done"],
     "controlFrames": 2,
     "expect": { "unit.failed": 0, "unit.done": 1 },
+    "env": { "CW_TEST_TOUCH_CONTROLS": "1" },
     "controlEnv": { "CW_TEST_SET_UNRECORDED": "1" },
-    "note": "actions set by the game (cw_input_set_action, _actions, _vector): this tick only, refused outside a tick, just_pressed against the tick before, a whole seat released, a stick read back, the set in the stream hash. Three CPU seats beside a pad person, recorded, then replayed with the CPU code running (its sets refused) and with no CPU code at all: the same state and hashes. Control: CW_TEST_SET_UNRECORDED leaves what the game set out of the recording, so both replays lose the CPUs' moves (unit.failed 4). Native only: in a cart the suite's touch cases (run in init, before a cart host delivers CW_TEST_TOUCH_CONTROLS) find the touch controls off and fail, as they do for unit-input; hex-board-replay covers set actions in the carts on GL and WebGPU"
+    "note": "actions set by the game (cw_input_set_action, _actions, _vector): this tick only, refused outside a tick, just_pressed against the tick before, a whole seat released, a stick read back, the set in the stream hash. Three CPU seats beside a pad person, recorded, then replayed with the CPU code running (its sets refused) and with no CPU code at all: the same state and hashes. Control: CW_TEST_SET_UNRECORDED leaves what the game set out of the recording, so both replays lose the CPUs' moves (unit.failed 4). Runs on the carts too (the suite's touch cases run late with CW_TEST_TOUCH_CONTROLS=1, as in unit-input); hex-board-replay covers set actions in a game's cart on GL and WebGPU"
   },
   {
     "name": "shell-join-press",
@@ -1360,9 +1360,24 @@
       "unit.failed": 0,
       "unit.done": 1
     },
+    "env": { "CW_TEST_TOUCH_CONTROLS": "1" },
     "controlEnv": {
       "CW_TEST_INJECT_FAIL": "1"
-    }
+    },
+    "note": "the input module on synthetic input. The touch-control cases (claiming, steering, layout, the overlay) run late (cw_test_late), where a cart host has delivered CW_TEST_TOUCH_CONTROLS=1, which keeps the engine's touch controls on in a cart; touch_host checks in init that a cart leaves touches to the host (the controls claim nothing, nothing is drawn) and that native keeps them. Without the switch a cart fails the 21 touch-control checks (the switch-off control, run by hand on romdev). Control: an injected failure"
+  },
+  {
+    "name": "unit-input-cart-touch",
+    "app": "unit_input",
+    "hosts": ["native"],
+    "frames": 2,
+    "minColors": 1,
+    "fields": ["unit.passed", "unit.failed", "unit.checksum", "unit.done"],
+    "controlFrames": 2,
+    "expect": { "unit.failed": 0, "unit.done": 1 },
+    "env": { "CW_TEST_CART_TOUCH": "1", "CW_TEST_TOUCH_CONTROLS": "1" },
+    "controlEnv": { "CW_TEST_TOUCH_CONTROLS": "0" },
+    "note": "unit-input on the native host under a cart's touch rule (CW_TEST_CART_TOUCH=1: the engine's touch controls off unless CW_TEST_TOUCH_CONTROLS=1, which a test reads from frame 1 on), so CI, which has no cart host, catches a suite that reads the switch too early or a gate that forgets it (unit-input failed 21 checks in every cart from v0.50.0 to v0.81.0, unseen). Control: the switch off, so the touch-control cases fail (unit.failed 21), as they do in a cart"
   },
   {
     "name": "unit-prompt",
