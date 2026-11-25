@@ -227,6 +227,14 @@ reverb zones in the guide. In a scene: `AudioStreamPlayer`, `AudioStreamPlayer2D
 Tempo with the pitch kept (music faster or slower in the same key): `cw_voice_set_tempo(v, 1.25f)`, stems together with
 `cw_voices_set_tempo(stems, 5, t)`; `cw_voice_frames_played` stays the song position at any tempo.
 
+**Story, voice and cinematics** (`story.h`, `speech.h`, `director.h`, [story-voice-director](docs/guides/story-voice-director.md)):
+write scenes, choices, flags, stats and bark pools as a text script, `node tools/story-compile.mjs main.story -o assets/main.cwstory --lines out/lines.json`;
+voice them ahead of time, `node tools/speech-bake.mjs out/lines.json -o assets/main.cwspeech --kokoro <node_modules> --asr` (Kokoro from node, no Python).
+`cw_story_play(st, "intro")`, `cw_story_tick` in `fixed_update`, `cw_story_draw` in `render` (subtitles, choices, pad-only skip);
+`cw_story_bark(st, "boss.phase2")` over gameplay; faces speak with `cw_face_new(model, NULL)` + `cw_speech_drive_faces`. Cinematic shots:
+`cw_director_cut(d, &(cw_shot){ .type = CW_SHOT_PUSH, .subj = { boss }, .nsubj = 1 })` with the game's subjects (eyes, chest, feet, facing) set
+every frame; a close-up re-solves when someone walks into it; the camera never shakes.
+
 **Gameplay nodes** (`gameplay.h`, `curve.h`, [gameplay nodes](docs/guides/gameplay-nodes.md)): do not hand-roll these.
 `Timer` (`wait_time`, `one_shot`, `autostart`, signal `timeout`; counts fixed ticks). `Path3D` / `Path2D` with a
 `PathFollow3D` / `PathFollow2D` child (`progress`, `speed`, `loop`; `cw_curve_*` in C: sample by distance, nearest

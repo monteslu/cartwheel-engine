@@ -150,3 +150,7 @@ cw_add_app(unit_shading_names SOURCES test_shading_names.c)
 # clustered lighting over a changing scene: lights added, reparented, hidden, removed, a material swapped, in
 # two-view split screen with a cascaded sun (the pass's scene index and material marking, cartwheel/lighting.h)
 cw_add_app(lighting_changes SOURCES lighting_changes.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/lighting_changes_assets)
+# story and speech packs: scenes, choices, flags, stats, pools, saves, skips, a pack's lengths and mouth (cartwheel/story.h, speech.h)
+cw_add_app(unit_story SOURCES test_story.c story_data.c)
+# the cinematic director: every shot type against synthetic people and walls, a passer-by, turns, release (cartwheel/director.h)
+cw_add_app(unit_director SOURCES test_director.c)

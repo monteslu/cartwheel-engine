@@ -3230,6 +3230,141 @@
    "macros": []
   },
   {
+   "header": "cartwheel/director.h",
+   "summary": "cartwheel/director.h: a cinematic camera. Shots are named by type and subjects (push in on the boss, a hero angle\non the player, an insert on a hand, a reaction close-up, a whip pan, a top-down) and solved against those subjects\nevery frame, so the framing holds while people move: a close-up never ends up on the back of a head, a shoulder,\na hand or somebody walking through the lens.\n\n  cw_director *d = cw_director_new(&(cw_director_desc){ .aspect = 16.f / 9, .ray = ray, .user = world });\n  cw_director_set_subject(d, 0, &(cw_dir_subject){ .eye = head, .chest = chest, .feet = feet, .face = fwd, ... });\n  cw_director_cut(d, &(cw_shot){ .type = CW_SHOT_PUSH, .subj = { 0 }, .nsubj = 1, .dur = 3 });\n  cw_director_update(d, dt, &cam);        // every frame: cam.pos, cam.look, cam.fov for the Camera3D\n  cw_director_release(d, 0.6f);           // ease back to the game's camera (cw_director_set_gameplay)\n\nSubjects are the game's: every frame give each one its eye point (between the eyes), chest, feet, the way the face\npoints (level), the hands and a radius (shoulder half-width). Anything else that may get in the way is a subject\ntoo (a passer-by, a foe): the solver keeps every subject's head and body out of the line to the face it frames.\nThe world is the game's: `ray` answers whether a segment hits something solid (walls, pillars, terrain); without\nit only people are avoided.\n\nSolving: each shot type has a set of candidate placements around its subjects (angle, distance, height); each is\nscored: the key point (the face, or the hand of an insert) in clear view (rays to the eyes and chest), the face\nturned toward the lens (a close-up needs the face, never a profile into hair or the back of the head), no other\nsubject's head, hair or body across the line to the face, the subject's own hands off the face, nothing solid in\nfront of the lens, the key point inside the frame and not too close, the 180-degree line of a two-shot kept from\nthe last cut, and variety against the last shot. The best wins. While the shot runs it is scored again every\n0.1 s against where everyone is now; when it fails (someone walks into the lens, the subject turns away), it solves\nagain near where the lens is and eases there, or cuts when the move would be long or pass through someone. A close\nshot with no clean placement steps back to a medium close-up, then a wide, so the frame always has the subject.\n\nThe camera never shakes: no handheld noise, no shake; motion is eased (a critically damped follow, smooth pushes,\na whip pan's quick ease in and out). Impacts belong to the pad's rumble (cartwheel/input.h cw_input_rumble).\n\nShot types (cartwheel/story.h cw_shot_type): WIDE (everyone), ESTABLISH (high and far), TWO (two people, side on),\nOTS (over subj[0]'s shoulder onto subj[1]'s face), MCU (head and shoulders), CU (the face), PUSH (a slow dolly in\non subj[0] over dur), REACT (a close-up on subj[0] listening to subj[1]), INSERT (subj[0]'s hand or head, or the\npoint), HERO (low, looking up at subj[0]), WHIP (a fast pan from the current framing onto subj[0], landing as an\nMCU or a two-shot), TOP (straight down over everyone), RELEASE (cw_director_release).\n\nDebug fields (cw_director_publish(d, \"dir\")): dir.active, dir.type (the shot asked), dir.solved (the type played\nafter any step back), dir.score, dir.resolves (live re-solves), dir.cuts, dir.blocked_frames (frames in which\nanother subject's head or body crossed the line to the key point within dir_block_radius, or a ray hit: must stay\n0 for a clean shot), dir.away_frames (close-up frames whose face pointed away from the lens), dir.out_frames (key\npoint outside the frame), dir.reversals (frames where the\ncamera's motion turned back on itself along an axis outside a cut or a whip: a shake shows here, a smooth move\nnever does), dir.key_x, dir.key_y (the key point on screen, -1..1).",
+   "functions": [
+    {
+     "name": "cw_director_new",
+     "signature": "cw_director *cw_director_new(const cw_director_desc *desc)",
+     "doc": "a director (desc may be NULL: defaults); free with cw_director_free",
+     "inline": false
+    },
+    {
+     "name": "cw_director_free",
+     "signature": "void cw_director_free(cw_director *d)",
+     "doc": "frees it (NULL is a no-op)",
+     "inline": false
+    },
+    {
+     "name": "cw_director_set_subject",
+     "signature": "void cw_director_set_subject(cw_director *d, int index, const cw_dir_subject *s)",
+     "doc": "index < CW_DIR_MAX_SUBJECTS",
+     "inline": false
+    },
+    {
+     "name": "cw_director_set_gameplay",
+     "signature": "void cw_director_set_gameplay(cw_director *d, const cw_dir_camera *cam)",
+     "doc": "the game's camera, for ease in and out",
+     "inline": false
+    },
+    {
+     "name": "cw_director_cut",
+     "signature": "void cw_director_cut(cw_director *d, const cw_shot *shot)",
+     "doc": "cut to a shot now (a WHIP pans from the current framing; RELEASE eases out)",
+     "inline": false
+    },
+    {
+     "name": "cw_director_release",
+     "signature": "void cw_director_release(cw_director *d, float seconds)",
+     "doc": "ease to the gameplay camera, then inactive",
+     "inline": false
+    },
+    {
+     "name": "cw_director_stop",
+     "signature": "void cw_director_stop(cw_director *d)",
+     "doc": "inactive at once",
+     "inline": false
+    },
+    {
+     "name": "cw_director_active",
+     "signature": "bool cw_director_active(const cw_director *d)",
+     "doc": "a shot or a release is playing",
+     "inline": false
+    },
+    {
+     "name": "cw_director_shot_done",
+     "signature": "bool cw_director_shot_done(const cw_director *d)",
+     "doc": "the shot has run its dur",
+     "inline": false
+    },
+    {
+     "name": "cw_director_shot_time",
+     "signature": "float cw_director_shot_time(const cw_director *d)",
+     "doc": "seconds since the shot was cut",
+     "inline": false
+    },
+    {
+     "name": "cw_director_update",
+     "signature": "bool cw_director_update(cw_director *d, float dt, cw_dir_camera *cam)",
+     "doc": "every frame (render-side or fixed tick; deterministic for the same inputs); false when inactive (cam untouched)",
+     "inline": false
+    },
+    {
+     "name": "cw_director_whip",
+     "signature": "float cw_director_whip(const cw_director *d)",
+     "doc": "0..1 how strongly a whip pans now",
+     "inline": false
+    },
+    {
+     "name": "cw_director_solved_type",
+     "signature": "cw_shot_type cw_director_solved_type(const cw_director *d)",
+     "doc": "the type playing after any step back (a close-up with no clean placement plays as an MCU or WIDE)",
+     "inline": false
+    },
+    {
+     "name": "cw_director_publish",
+     "signature": "void cw_director_publish(cw_director *d, const char *prefix)",
+     "doc": "debug fields under prefix (dir.*: see the top of this header)",
+     "inline": false
+    },
+    {
+     "name": "cw_director_measure",
+     "signature": "float cw_director_measure(const cw_director *d, cw_dir_measure m)",
+     "doc": "one measure's value",
+     "inline": false
+    },
+    {
+     "name": "cw_director_cut_story",
+     "signature": "void cw_director_cut_story(cw_director *d, const cw_story_shot *s, const int *cast_to_subject)",
+     "doc": "the story's shot beats as shots: subjects map cast index -> subject index (NULL: the same index)",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_dir_subject",
+     "doc": "",
+     "decl": "typedef struct cw_dir_subject {\n  t3_vec3 eye;        /* between the eyes */\n  t3_vec3 chest;      /* middle of the chest */\n  t3_vec3 feet;       /* on the ground under them */\n  t3_vec3 face;       /* the way the face points, level (unit; 0: from eye minus chest) */\n  t3_vec3 hand_l, hand_r; /* 0,0,0: at the chest */\n  float radius;       /* shoulder half-width (0: 0.25 m) */\n  float head_radius;  /* head with hair (0: 0.14 m) */\n  bool visible;       /* hidden subjects are neither framed nor in the way */\n} cw_dir_subject;"
+    },
+    {
+     "name": "cw_shot",
+     "doc": "",
+     "decl": "typedef struct cw_shot {\n  cw_shot_type type;\n  int subj[3];        /* subject indices */\n  int nsubj;\n  float dur;          /* PUSH: seconds of the dolly (0: 4); any type: how long it holds before cw_director_shot_done */\n  float dist, height, fov; /* 0: the type's own */\n  cw_shot_part part;  /* INSERT */\n  t3_vec3 point;      /* INSERT with CW_SHOT_PART_POINT */\n} cw_shot;"
+    },
+    {
+     "name": "cw_director_desc",
+     "doc": "",
+     "decl": "typedef struct cw_director_desc {\n  float aspect;       /* the view's width / height (0: 16/9) */\n  /* a solid thing on the segment from a to b: true and *t (0..1) of the first hit. NULL: no world */\n  bool (*ray)(t3_vec3 a, t3_vec3 b, float *t, void *user);\n  void *user;\n  float ease;         /* the follow's rate (0: 5; higher follows tighter) */\n  bool no_solve;      /* the first candidate of each type, never scored or re-solved (a gate's control only) */\n  float test_noise;   /* metres of handheld-style noise added to the output (a gate's control only: it must show as shake) */\n} cw_director_desc;"
+    },
+    {
+     "name": "cw_director",
+     "doc": "",
+     "decl": "typedef struct cw_director cw_director;"
+    },
+    {
+     "name": "cw_dir_measure",
+     "doc": "the measures (the debug fields' values), for a game's own checks; cumulative since cw_director_new",
+     "decl": "typedef enum { CW_DIR_M_BLOCKED, CW_DIR_M_AWAY, CW_DIR_M_OUT, CW_DIR_M_REVERSALS, CW_DIR_M_RESOLVES, CW_DIR_M_CUTS, CW_DIR_M_KEY_X, CW_DIR_M_KEY_Y } cw_dir_measure;"
+    }
+   ],
+   "macros": [
+    {
+     "name": "CW_DIR_MAX_SUBJECTS",
+     "doc": ""
+    }
+   ]
+  },
+  {
    "header": "cartwheel/environment.h",
    "summary": "Sky and fog. Node types, all reflected\n(docs/nodes.json) and .cwscene-authorable:\n\n  ProceduralSky     a physically based sky: single scattering of sunlight\n                    by air (Rayleigh) and haze (Mie) in a 60 km atmosphere\n                    over a 6360 km planet, ray-marched on the GPU into a\n                    cube map. The sun's position comes from time_of_day\n                    (hours), latitude and declination (the season); a\n                    non-zero day_speed runs the day / night cycle on the\n                    fixed tick (deterministic). It drives a\n                    DirectionalLight3D (`sun`): its direction, its colour\n                    (the light that reaches the ground through the\n                    atmosphere: reddening at sunset) and its energy\n                    (sun_energy x that transmittance; zero below the\n                    horizon). The cube is the scene's background (with an\n                    analytic sun disk drawn after the opaque scene) and,\n                    prefiltered by three.c's PMREMGenerator, the scene's\n                    environment (image-based light for Standard materials\n                    without an envMap of their own). The cube and the environment are\n                    re-rendered only when the sun moved more than\n                    env_update_angle or a property changed (at most once a\n                    frame). Units: sky radiance is sunlight scattered from\n                    an irradiance of sun_energy x sky_energy, the same\n                    lux-like scale as light energies.\n  HeightFog         exponential height fog in the post chain (an EFFECTS\n                    pass that reads depth): density falls off with height\n                    above base_height, integrated in closed form along\n                    each view ray (no froxels); in-scattered colour from\n                    `color`, or from the sky's horizon when\n                    use_sky_color; a Henyey-Greenstein lobe toward the sun\n                    (sun_scatter, sun_g) for the glow around it. Sky\n                    pixels are fogged up to\n                    sky_distance.\n                    Transparent and additive surfaces (three.c's\n                    transparent queue, GPUParticles3D, trails) are\n                    drawn after the fog and fogged in their own shaders\n                    at their own distance (alpha blended: toward the\n                    fog's light; additive: toward nothing), never by the\n                    depth of what is behind them; three.c materials take\n                    it through the \"hfog\" shading part (program states\n                    x...hfog); a material with fog = false takes none\n                    (drawn after the fog, as it is). The volumetric mode's particles look the\n                    grid up at their own distance.\n                    volumetric = true: the fog within volumetric_distance\n                    of the camera is lit per cell of a 3D grid that\n                    follows the view (froxels): each light lights it\n                    through its shadows, so light shafts show where the\n                    sun falls through a window or between columns and a\n                    spot light draws its cone. Light from everywhere is\n                    the fog colour x volumetric_ambient; each light adds\n                    its colour x energy x its fog_energy property through\n                    a Henyey-Greenstein lobe of anisotropy sun_g (sun_scatter\n                    is the analytic fog's alone). The analytic fog\n                    continues past the grid, lit by the grid's ambient and\n                    its first directional light, so the two meet without a\n                    seam; start_distance does not apply. The grid's cells\n                    are sampled at a jittered point each frame and blended\n                    with the previous frames (volumetric_temporal), which\n                    hides the jitter's noise; a light that moves fast\n                    leaves a short trail.\n  FogVolume3D       a region of volumetric fog: a BOX or ELLIPSOID of\n                    `size` placed by the node's transform, or WORLD\n                    (everywhere), with its own density, albedo (the\n                    share of light it scatters), emission (light of its\n                    own), height falloff, soft edges and value noise that\n                    drifts with noise_wind. Volumes add to each other and\n                    to a volumetric HeightFog; they work without one too\n                    (ambient light then comes only from a HeightFog's\n                    colour, so with no HeightFog a volume shows only where\n                    lights reach it or it emits). At most 16 volumes and 8\n                    lights (fog_energy > 0) light the fog.\n\nVolumetric fog cost follows the effects detail quality setting\n(cartwheel/quality.h): the grid (cells across x down x slices; down\nfollows the aspect) and the shadow maps it draws for itself (one\northographic tile for the first shadowed directional light, fitted to the\ngrid's reach; one perspective tile each for up to three shadowed spot\nlights; omni lights light it unshadowed):\n\n                    Low          Medium       High         Ultra\n  grid              64 x 32      96 x 48      160 x 64     240 x 96\n  shadow tile       256 (sun)    512          1024         1024\n\nOn GL (GLES 3.0, WebGL 2) the grid is built by fragment passes into the\nlayers of RGBA16F 3D textures; it needs float render targets (every host\ncartwheel runs on has them; without, the analytic fog draws instead). On\nWebGPU it is built by compute shaders. Only perspective cameras.\n\nThe debug channel's `environment` command reports the sun and the sky\nupdates.",
    "functions": [
@@ -16209,6 +16344,220 @@
    "macros": []
   },
   {
+   "header": "cartwheel/speech.h",
+   "summary": "cartwheel/speech.h: voiced lines from a pre-generated speech pack, and faces that speak them.\n\nLines are voiced ahead of time by tools/speech-bake.mjs (Kokoro-82M run from node, on the CPU) into one .cwspeech\nasset per game: each line's audio (IMA ADPCM, mono) and its mouth envelope (how open, what shape, 100 times a\nsecond), filed under the line's key (FNV-1a of \"cast_id|text\": cartwheel/story.h computes the same, so a story's\nlines find their voices with no table in between).\n\n  cw_speech *sp = cw_speech_load(\"main.cwspeech\");\n  cw_voice v = cw_speech_play(sp, key, NULL);      // on the speech bus (its own volume, under the master)\n  cw_speech_mouth(sp, key, t, &open, &shape);       // the lips at t seconds into the line\n\nA story (cartwheel/story.h) given the pack plays each line's voice itself and times the line by it.\n\nFaces: cw_face drives a glTF character's morph targets (cartwheel/morph.h) from a mouth (open, shape) and an\nemotion, eased the way a face moves, with blinks. Channels are found by name on the model: the defaults below\ncover the common names (ARKit style jawOpen / mouthSmile_L, VRM aa / oh / happy / angry, and plain smile, frown,\nbrowUp, blink); cw_face_map names a model's own. A channel the model lacks is left out (cw_face_channels says which\nwere found). The weights are computed from the story's ticks, not the mixer, so a face is the same on every host\nwith or without sound.\n\n  cw_face *f = cw_face_new(model_root, NULL);\n  cw_face_set_emotion(f, CW_EMO_ANGER, 0.7f);\n  cw_face_set_mouth(f, open, shape);\n  cw_face_update(f, dt);                 // writes the morph weights\n\nDucking: cw_speech_duck() is 1 when no line plays and falls toward duck_level while one does (eased); multiply the\nmusic's volume by it (cw_music_set_volume) so speech is heard over it.\n\nSettings: cw_speech_settings fills two rows for the shell's Settings screen (cw_shell_desc.settings_items):\n\"Voices\" (volume, 0 to 10) and \"Subtitles\" (On, Off); cw_speech_volume_step and cw_speech_subtitles_on read them.\n\nDebug fields (cw_speech_publish(sp, \"speech\")): speech.lines (in the pack), speech.tone (1: tone stand-ins),\nspeech.played, speech.missing (lines asked for that the pack lacks), speech.playing (the key playing, 0 none),\nspeech.duck. A face's: cw_face_publish(f, \"face.keeper\") publishes face.keeper.w (every channel's weight, in\ncw_face_channel order), face.keeper.found (a bit per channel found on the model), face.keeper.blinks.",
+   "functions": [
+    {
+     "name": "cw_speech_load",
+     "signature": "cw_speech *cw_speech_load(const char *asset_path)",
+     "doc": "NULL (logged) when missing or malformed",
+     "inline": false
+    },
+    {
+     "name": "cw_speech_load_memory",
+     "signature": "cw_speech *cw_speech_load_memory(const void *data, size_t size)",
+     "doc": "copied",
+     "inline": false
+    },
+    {
+     "name": "cw_speech_free",
+     "signature": "void cw_speech_free(cw_speech *sp)",
+     "doc": "frees the pack and its cached sounds (NULL is a no-op)",
+     "inline": false
+    },
+    {
+     "name": "cw_speech_count",
+     "signature": "int cw_speech_count(const cw_speech *sp)",
+     "doc": "lines in the pack",
+     "inline": false
+    },
+    {
+     "name": "cw_speech_has",
+     "signature": "bool cw_speech_has(const cw_speech *sp, uint32_t key)",
+     "doc": "the pack holds the line",
+     "inline": false
+    },
+    {
+     "name": "cw_speech_seconds",
+     "signature": "float cw_speech_seconds(const cw_speech *sp, uint32_t key)",
+     "doc": "0 when the pack lacks the line",
+     "inline": false
+    },
+    {
+     "name": "cw_speech_key",
+     "signature": "uint32_t cw_speech_key(const char *cast_id, const char *text)",
+     "doc": "the key a line is filed under",
+     "inline": false
+    },
+    {
+     "name": "cw_speech_play",
+     "signature": "cw_voice cw_speech_play(cw_speech *sp, uint32_t key, const cw_play_desc *desc)",
+     "doc": "Play a line (desc NULL: the speech bus at volume 1). The decoded sound is cached (the last 8 lines). A line\nstarted while another plays stops the other with a short fade. Returns the voice (0 when the pack lacks the line,\ncounted in speech.missing).",
+     "inline": false
+    },
+    {
+     "name": "cw_speech_stop",
+     "signature": "void cw_speech_stop(cw_speech *sp, float fade)",
+     "doc": "the line playing fades out over fade seconds",
+     "inline": false
+    },
+    {
+     "name": "cw_speech_mouth",
+     "signature": "void cw_speech_mouth(const cw_speech *sp, uint32_t key, float t, float *open, float *shape)",
+     "doc": "The mouth at t seconds into the line: open 0..1, shape 0 (round) .. 1 (wide). 0, 0.5 outside the line or when the\npack lacks it.",
+     "inline": false
+    },
+    {
+     "name": "cw_speech_set_playing",
+     "signature": "void cw_speech_set_playing(cw_speech *sp, uint32_t key)",
+     "doc": "Tell the pack which line sounds now (a story does this; a game playing lines itself may too): it drives the duck.",
+     "inline": false
+    },
+    {
+     "name": "cw_speech_tick",
+     "signature": "void cw_speech_tick(cw_speech *sp, float dt)",
+     "doc": "eases the duck; applies the Voices setting to the speech bus",
+     "inline": false
+    },
+    {
+     "name": "cw_speech_duck",
+     "signature": "float cw_speech_duck(const cw_speech *sp)",
+     "doc": "1 .. duck_level",
+     "inline": false
+    },
+    {
+     "name": "cw_speech_set_duck_level",
+     "signature": "void cw_speech_set_duck_level(cw_speech *sp, float level)",
+     "doc": "default 0.45",
+     "inline": false
+    },
+    {
+     "name": "cw_speech_bus",
+     "signature": "cw_bus cw_speech_bus(void)",
+     "doc": "\"speech\", under the master; made on first use",
+     "inline": false
+    },
+    {
+     "name": "cw_speech_settings",
+     "signature": "void cw_speech_settings(cw_shell_setting *rows)",
+     "doc": "the Settings rows: rows[0] Voices, rows[1] Subtitles (saved under \"speech_volume\" and \"speech_subtitles\")\nrows[2]",
+     "inline": false
+    },
+    {
+     "name": "cw_speech_volume_step",
+     "signature": "int cw_speech_volume_step(void)",
+     "doc": "0..10, default 10",
+     "inline": false
+    },
+    {
+     "name": "cw_speech_subtitles_on",
+     "signature": "bool cw_speech_subtitles_on(void)",
+     "doc": "default on",
+     "inline": false
+    },
+    {
+     "name": "cw_speech_publish",
+     "signature": "void cw_speech_publish(cw_speech *sp, const char *prefix)",
+     "doc": "debug fields under prefix (see the top of this header)",
+     "inline": false
+    },
+    {
+     "name": "cw_face_new",
+     "signature": "cw_face *cw_face_new(t3_object *root, const cw_face_map *map)",
+     "doc": "a face on every mesh under root that has the morph targets (NULL map: the default names); NULL when root is NULL",
+     "inline": false
+    },
+    {
+     "name": "cw_face_free",
+     "signature": "void cw_face_free(cw_face *f)",
+     "doc": "frees the face (the model is the caller's)",
+     "inline": false
+    },
+    {
+     "name": "cw_face_channels",
+     "signature": "uint32_t cw_face_channels(const cw_face *f)",
+     "doc": "a bit per channel found on the model",
+     "inline": false
+    },
+    {
+     "name": "cw_face_set_emotion",
+     "signature": "void cw_face_set_emotion(cw_face *f, cw_emotion e, float amount)",
+     "doc": "the emotion the face eases toward, amount 0..1",
+     "inline": false
+    },
+    {
+     "name": "cw_face_set_mouth",
+     "signature": "void cw_face_set_mouth(cw_face *f, float open, float shape)",
+     "doc": "the mouth now: open 0..1, shape 0 round .. 1 wide (cw_speech_mouth)",
+     "inline": false
+    },
+    {
+     "name": "cw_face_set_channel",
+     "signature": "void cw_face_set_channel(cw_face *f, cw_face_channel c, float extra)",
+     "doc": "the game's own, added over the emotion",
+     "inline": false
+    },
+    {
+     "name": "cw_face_set_blinking",
+     "signature": "void cw_face_set_blinking(cw_face *f, bool on, uint32_t seed)",
+     "doc": "on by default; the seed spreads blinks between faces",
+     "inline": false
+    },
+    {
+     "name": "cw_face_update",
+     "signature": "void cw_face_update(cw_face *f, float dt)",
+     "doc": "ease every channel and write the morph weights",
+     "inline": false
+    },
+    {
+     "name": "cw_face_weight",
+     "signature": "float cw_face_weight(const cw_face *f, cw_face_channel c)",
+     "doc": "a channel's eased weight (0..1) after the last update",
+     "inline": false
+    },
+    {
+     "name": "cw_face_publish",
+     "signature": "void cw_face_publish(cw_face *f, const char *prefix)",
+     "doc": "debug fields under prefix: .w (every channel), .found, .blinks",
+     "inline": false
+    },
+    {
+     "name": "cw_speech_drive_faces",
+     "signature": "void cw_speech_drive_faces(const cw_story *st, const cw_speech *sp, cw_face *const *faces, int count, float dt, bool update)",
+     "doc": "One call per tick for a story's speakers: the speaking cast member's face takes the line's mouth and emotion,\nevery other face eases back to calm and a closed mouth. faces[i] is cast member i's face (NULL for those with\nnone). Call cw_face_update for each face after it (or let this do it: update = true).",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_speech",
+     "doc": "",
+     "decl": "typedef struct cw_speech cw_speech;"
+    },
+    {
+     "name": "cw_shell_setting",
+     "doc": "",
+     "decl": "typedef struct cw_shell_setting cw_shell_setting; /* cartwheel/shell.h */"
+    },
+    {
+     "name": "cw_face_channel",
+     "doc": "faces",
+     "decl": "typedef enum {\n  CW_FACE_JAW_OPEN, CW_FACE_MOUTH_ROUND, CW_FACE_MOUTH_WIDE, CW_FACE_SMILE, CW_FACE_FROWN, CW_FACE_SNEER,\n  CW_FACE_BROW_UP, CW_FACE_BROW_DOWN, CW_FACE_BROW_INNER, CW_FACE_EYES_WIDE, CW_FACE_SQUINT, CW_FACE_BLINK,\n  CW_FACE_CHANNELS\n} cw_face_channel;"
+    },
+    {
+     "name": "cw_face_map",
+     "doc": "a model's own target names per channel (NULL: try the defaults); several names may be given for one channel\nseparated by commas (\"mouthSmile_L,mouthSmile_R\"): each is set to the channel's weight",
+     "decl": "typedef struct cw_face_map {\n  const char *names[CW_FACE_CHANNELS];\n  float scale[CW_FACE_CHANNELS];   /* the weight at a channel's full strength (0: 1) */\n} cw_face_map;"
+    },
+    {
+     "name": "cw_face",
+     "doc": "",
+     "decl": "typedef struct cw_face cw_face;"
+    }
+   ],
+   "macros": []
+  },
+  {
    "header": "cartwheel/splats.h",
    "summary": "cartwheel/splats.h: blob shadows and light splats, the cheap stand-ins\nfor dynamic shadows and dynamic lights on ground that draws baked\n(LightmapGI shading BAKED, cartwheel/lightmap.h, takes no real-time light\nor shadow).\n\nA splat set is one instanced draw of flat quads lying on the ground, each\nplaced, stretched and turned by the caller every frame:\n\n  CW_SPLATS_SHADOW  a soft dark blob under a moving object: the colour\n                    below is multiplied by 1 - strength x falloff (blend\n                    ZERO, ONE_MINUS_SRC_COLOR), so a strength of 0.6\n                    takes 60% of the light at the centre. Stretch it away\n                    from the sun for a low sun's long shadow.\n  CW_SPLATS_LIGHT   a pool of added light on the ground under a moving\n                    light (a muzzle flash, a fire, a lamp a player\n                    carries): additive, the colour is the light's colour\n                    x strength (HDR, so it blooms), the falloff that of a\n                    point light above the ground.\n\nCost: one draw for the whole set; pixels only where a splat lies (a\nshadow under 2000 enemies is a few percent of a 1080p frame). Splats test\ndepth and write none, so what stands on them hides them. Render only:\nnothing here reaches the simulation. Opt in: nothing draws a splat unless\na game makes a set.",
    "functions": [
@@ -16300,6 +16649,298 @@
     }
    ],
    "macros": []
+  },
+  {
+   "header": "cartwheel/story.h",
+   "summary": "cartwheel/story.h: dialogue and story. Scenes of spoken lines, choices on a pad, flags and stats that change what\nhappens next, barks and banter that play over gameplay, subtitles, skip, save points.\n\nA story is written as a text script and compiled ahead of time (tools/story-compile.mjs) into a .cwstory asset\n(or a C array linked into the game: --c). The guide (docs/guides/story-voice-director.md) has the script format:\n\n  cast keeper \"The Keeper\" voice=bm_george color=#ffd27a\n  stat trust = 0\n  flag gave_name\n  scene gate save\n    shot two keeper traveller\n    say keeper anger:0.6 \"Who are you?\"\n    choice \"Answer the keeper\" timeout=12 default=1\n      option \"A courier.\"\n        add trust 2\n        set gave_name\n      option \"Nobody.\"\n    end\n    if flag gave_name and stat trust >= 2\n      emit open_gate 1\n    end\n  end\n  pool keeper.idle cooldown=4\n    line keeper \"Mind the third plank.\"\n  end\n\nIn the game:\n\n  cw_story *st = cw_story_new(&(cw_story_desc){ .path = \"main.cwstory\", .speech = sp, .on_shot = shot, .on_emit = ev });\n  cw_story_play(st, \"gate\");                   // a scene starts (gameplay may keep running under it, or wait)\n  cw_story_tick(st, dt);                       // in fixed_update: input, timing, the next beat\n  cw_story_bark(st, \"keeper.idle\");            // a line from a pool, over gameplay (never blocks)\n  cw_story_draw(st, font, (cw_rect){ 0 });        // in render, inside cw_r2d_begin / end: subtitles and choices\n\nPlay is pad only: advance (ui_accept by default) ends the line now, holding skip (ui_back by default) for\nCW_STORY_SKIP_HOLD seconds skips the rest of the scene, up and down move the choice cursor and advance picks.\nLines also end on their own: when the voice ends (the speech pack's length) plus a short pause, or after a reading\ntime from the text's length when there is no voice. A choice with timeout= picks its default= when time runs out.\nSkipping never loses a choice: a skipped scene takes each choice's default and runs every flag, stat, emit and shot\nbeat on the way, so the story's state is the same as if it had been played through by a player who chose defaults.\n\nTiming is in fixed ticks (cw_story_tick's dt) and voice lengths come from the pack, never from the mixer: the\nsame inputs give the same story on every host and with audio off, so gates can compare it.\n\nPools (barks, banter, reactive lines): cw_story_bark picks one line of the pool whose condition holds, never the\nline the pool said last, preferring the one said longest ago; a pool's cooldown= holds it after it speaks; a pool\nmarked once says each line at most once in the whole story (saved). A bark plays as an aside: a small subtitle and\nthe voice, with no camera cut and no input, over gameplay or a scene's waiting. A bark of a lower priority than the\naside playing waits its cooldown out; a higher one replaces it. An aside never interrupts a scene's line: it is\ndropped (and reported in story.asides_dropped).\n\nSaves: cw_story_save writes the flags, stats, once-pool lines said and the last save point reached into a buffer\n(named entries: renaming a flag in the script loses its value; adding or reordering never does); cw_story_load\nputs them back, and cw_story_resume_scene names the scene to play to resume. A save point is a scene marked save,\nor a save beat inside one.\n\nDebug fields (cw_story_publish(st, \"story\")): story.scene (the playing scene's index, -1 none), story.beat,\nstory.line_key (the line on screen now, 0 none), story.lines (lines said), story.asides, story.asides_dropped,\nstory.choices (choices made), story.choice (the last option picked, from 0), story.choice_cursor, story.skips,\nstory.scene_skips, story.repeats (a line from a pool said twice running: must stay 0), story.waiting (1 when a\nchoice waits), story.emits, story.shots, story.saves, story.flags_hash (FNV of every flag and stat).",
+   "functions": [
+    {
+     "name": "cw_story_new",
+     "signature": "cw_story *cw_story_new(const cw_story_desc *desc)",
+     "doc": "NULL (logged) when the data is missing or malformed",
+     "inline": false
+    },
+    {
+     "name": "cw_story_free",
+     "signature": "void cw_story_free(cw_story *st)",
+     "doc": "frees the story (NULL is a no-op)",
+     "inline": false
+    },
+    {
+     "name": "cw_story_play",
+     "signature": "bool cw_story_play(cw_story *st, const char *scene)",
+     "doc": "scenes\nfalse (logged) when there is no such scene",
+     "inline": false
+    },
+    {
+     "name": "cw_story_active",
+     "signature": "bool cw_story_active(const cw_story *st)",
+     "doc": "a scene is playing",
+     "inline": false
+    },
+    {
+     "name": "cw_story_scene",
+     "signature": "const char *cw_story_scene(const cw_story *st)",
+     "doc": "the playing scene's name, NULL none",
+     "inline": false
+    },
+    {
+     "name": "cw_story_scene_index",
+     "signature": "int cw_story_scene_index(const cw_story *st, const char *scene)",
+     "doc": "-1 none",
+     "inline": false
+    },
+    {
+     "name": "cw_story_seen",
+     "signature": "bool cw_story_seen(const cw_story *st, const char *scene)",
+     "doc": "the scene has ended (played or skipped)",
+     "inline": false
+    },
+    {
+     "name": "cw_story_stop",
+     "signature": "void cw_story_stop(cw_story *st)",
+     "doc": "the scene stops where it is (no skip: later beats do not run)",
+     "inline": false
+    },
+    {
+     "name": "cw_story_tick",
+     "signature": "void cw_story_tick(cw_story *st, float dt)",
+     "doc": "in fixed_update, every tick",
+     "inline": false
+    },
+    {
+     "name": "cw_story_current",
+     "signature": "const cw_story_line *cw_story_current(const cw_story *st)",
+     "doc": "what is on screen now\nthe scene's line, NULL none",
+     "inline": false
+    },
+    {
+     "name": "cw_story_aside",
+     "signature": "const cw_story_line *cw_story_aside(const cw_story *st)",
+     "doc": "the aside or bark playing, NULL none",
+     "inline": false
+    },
+    {
+     "name": "cw_story_line_time",
+     "signature": "float cw_story_line_time(const cw_story *st, bool aside)",
+     "doc": "seconds into that line",
+     "inline": false
+    },
+    {
+     "name": "cw_story_choosing",
+     "signature": "bool cw_story_choosing(const cw_story *st)",
+     "doc": "a choice waits",
+     "inline": false
+    },
+    {
+     "name": "cw_story_options",
+     "signature": "int cw_story_options(const cw_story *st, const char **text, bool *enabled, int cap)",
+     "doc": "the choice's options",
+     "inline": false
+    },
+    {
+     "name": "cw_story_cursor",
+     "signature": "int cw_story_cursor(const cw_story *st)",
+     "doc": "the option under the cursor, from 0",
+     "inline": false
+    },
+    {
+     "name": "cw_story_prompt",
+     "signature": "const char *cw_story_prompt(const cw_story *st)",
+     "doc": "the waiting choice's prompt, NULL when none waits",
+     "inline": false
+    },
+    {
+     "name": "cw_story_advance",
+     "signature": "void cw_story_advance(cw_story *st)",
+     "doc": "input from code (bots, tests); the pad does the same",
+     "inline": false
+    },
+    {
+     "name": "cw_story_choose",
+     "signature": "void cw_story_choose(cw_story *st, int option)",
+     "doc": "an enabled option of the waiting choice",
+     "inline": false
+    },
+    {
+     "name": "cw_story_skip_scene",
+     "signature": "void cw_story_skip_scene(cw_story *st)",
+     "doc": "skip the rest of the scene (as a held skip does)",
+     "inline": false
+    },
+    {
+     "name": "cw_story_bark",
+     "signature": "const cw_story_line *cw_story_bark(cw_story *st, const char *pool)",
+     "doc": "pools\nNULL: nothing eligible, cooling down or busy",
+     "inline": false
+    },
+    {
+     "name": "cw_story_pool_ready",
+     "signature": "bool cw_story_pool_ready(const cw_story *st, const char *pool)",
+     "doc": "the pool exists and is not cooling down",
+     "inline": false
+    },
+    {
+     "name": "cw_story_flag",
+     "signature": "bool cw_story_flag(const cw_story *st, const char *flag)",
+     "doc": "flags and stats (by the script's names; an unknown name is logged once and reads 0)",
+     "inline": false
+    },
+    {
+     "name": "cw_story_set_flag",
+     "signature": "void cw_story_set_flag(cw_story *st, const char *flag, bool on)",
+     "doc": "set a flag by name",
+     "inline": false
+    },
+    {
+     "name": "cw_story_stat",
+     "signature": "int cw_story_stat(const cw_story *st, const char *stat)",
+     "doc": "a stat's value by name",
+     "inline": false
+    },
+    {
+     "name": "cw_story_set_stat",
+     "signature": "void cw_story_set_stat(cw_story *st, const char *stat, int value)",
+     "doc": "set a stat by name",
+     "inline": false
+    },
+    {
+     "name": "cw_story_add_stat",
+     "signature": "void cw_story_add_stat(cw_story *st, const char *stat, int delta)",
+     "doc": "add to a stat by name",
+     "inline": false
+    },
+    {
+     "name": "cw_story_cast_count",
+     "signature": "int cw_story_cast_count(const cw_story *st)",
+     "doc": "cast",
+     "inline": false
+    },
+    {
+     "name": "cw_story_cast_find",
+     "signature": "int cw_story_cast_find(const cw_story *st, const char *id)",
+     "doc": "-1 none",
+     "inline": false
+    },
+    {
+     "name": "cw_story_cast_id",
+     "signature": "const char *cw_story_cast_id(const cw_story *st, int who)",
+     "doc": "a cast member's id in the script, NULL out of range",
+     "inline": false
+    },
+    {
+     "name": "cw_story_cast_name",
+     "signature": "const char *cw_story_cast_name(const cw_story *st, int who)",
+     "doc": "a cast member's display name, NULL out of range",
+     "inline": false
+    },
+    {
+     "name": "cw_story_save",
+     "signature": "size_t cw_story_save(const cw_story *st, void *buf, size_t cap)",
+     "doc": "saves\nbytes written (or needed, when cap is short)",
+     "inline": false
+    },
+    {
+     "name": "cw_story_load",
+     "signature": "bool cw_story_load(cw_story *st, const void *buf, size_t size)",
+     "doc": "puts a saved story back (cw_story_reset first); false when the buffer is not a story save",
+     "inline": false
+    },
+    {
+     "name": "cw_story_resume_scene",
+     "signature": "const char *cw_story_resume_scene(const cw_story *st)",
+     "doc": "the last save point's scene, NULL none",
+     "inline": false
+    },
+    {
+     "name": "cw_story_reset",
+     "signature": "void cw_story_reset(cw_story *st)",
+     "doc": "a new game: every flag, stat and pool as declared",
+     "inline": false
+    },
+    {
+     "name": "cw_story_draw",
+     "signature": "void cw_story_draw(cw_story *st, cw_font font, cw_rect area)",
+     "doc": "subtitles: the line on screen as a box near the bottom of `area` (canvas units; w or h 0: the whole canvas), the speaker's name over it, at the readable\nsize floor (2.4% of the canvas height, scaled by the player's Text size setting), the choice menu above it with\nthe cursor, and an aside as a smaller line at the top. A skip hint shows while skip is held.",
+     "inline": false
+    },
+    {
+     "name": "cw_story_set_subtitles",
+     "signature": "void cw_story_set_subtitles(cw_story *st, bool on)",
+     "doc": "off: scene lines and asides are not drawn (choices still are)",
+     "inline": false
+    },
+    {
+     "name": "cw_story_subtitles",
+     "signature": "bool cw_story_subtitles(const cw_story *st)",
+     "doc": "subtitles are drawn",
+     "inline": false
+    },
+    {
+     "name": "cw_story_speaking",
+     "signature": "bool cw_story_speaking(const cw_story *st, int *who, uint32_t *key, float *t, cw_emotion *emotion, float *amount)",
+     "doc": "the speaking face: who speaks now (scene line first, else the aside), the line's key, seconds into it and its\nemotion. false when nobody speaks. With cartwheel/speech.h: cw_speech_mouth(sp, key, t, &open, &shape).",
+     "inline": false
+    },
+    {
+     "name": "cw_story_publish",
+     "signature": "void cw_story_publish(cw_story *st, const char *prefix)",
+     "doc": "debug fields under prefix (one story at a time)",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_story",
+     "doc": "",
+     "decl": "typedef struct cw_story cw_story;"
+    },
+    {
+     "name": "cw_speech",
+     "doc": "",
+     "decl": "typedef struct cw_speech cw_speech; /* cartwheel/speech.h */"
+    },
+    {
+     "name": "cw_emotion",
+     "doc": "a line's feeling: drives the speaker's face (cw_face_set_emotion)",
+     "decl": "typedef enum { CW_EMO_CALM, CW_EMO_JOY, CW_EMO_ANGER, CW_EMO_SORROW, CW_EMO_FEAR, CW_EMO_SURPRISE, CW_EMO_COUNT } cw_emotion;"
+    },
+    {
+     "name": "cw_shot_type",
+     "doc": "shot types a script's shot beat asks for (the director's, cartwheel/director.h, in the same order)",
+     "decl": "typedef enum {\n  CW_SHOT_WIDE, CW_SHOT_ESTABLISH, CW_SHOT_TWO, CW_SHOT_OTS, CW_SHOT_MCU, CW_SHOT_CU,\n  CW_SHOT_PUSH, CW_SHOT_REACT, CW_SHOT_INSERT, CW_SHOT_HERO, CW_SHOT_WHIP, CW_SHOT_TOP,\n  CW_SHOT_RELEASE, /* back to the game's own camera */\n  CW_SHOT_TYPES\n} cw_shot_type;"
+    },
+    {
+     "name": "cw_shot_part",
+     "doc": "",
+     "decl": "typedef enum { CW_SHOT_PART_HEAD, CW_SHOT_PART_HAND_L, CW_SHOT_PART_HAND_R, CW_SHOT_PART_POINT, CW_SHOT_PART_CHEST } cw_shot_part;"
+    },
+    {
+     "name": "cw_story_line",
+     "doc": "",
+     "decl": "typedef struct cw_story_line {\n  int who;              /* cast index */\n  const char *speaker;  /* the cast member's display name */\n  const char *cast_id;  /* the cast member's id in the script */\n  const char *text;\n  uint32_t key;         /* the voice pack's key (FNV-1a of \"cast_id|text\") */\n  cw_emotion emotion;\n  float amount;         /* 0..1 */\n  int to;               /* who it is said to, -1 none */\n  int shot;             /* a cw_shot_type asked with shot=, -1 none */\n  uint32_t color;       /* 0xRRGGBB, the speaker's name colour */\n  float seconds;        /* how long it plays (voice length, or a reading time) */\n  bool aside;           /* a bark or an aside beat: over gameplay */\n} cw_story_line;"
+    },
+    {
+     "name": "cw_story_shot",
+     "doc": "",
+     "decl": "typedef struct cw_story_shot {\n  cw_shot_type type;\n  int subj[3];          /* cast indices, -1 unused */\n  int nsubj;\n  float dur, dist, fov, height; /* 0: the director's own */\n  cw_shot_part part;\n} cw_story_shot;"
+    },
+    {
+     "name": "cw_story_desc",
+     "doc": "",
+     "decl": "typedef struct cw_story_desc {\n  const char *path;          /* the .cwstory asset, or: */\n  const void *data;          /* the compiled bytes (story-compile.mjs --c); copied */\n  size_t size;\n  cw_speech *speech;         /* optional: lines play their voice and take its length */\n  int player;                /* whose actions drive it (0 = player 1) */\n  bool any_player;           /* every player's pad drives it */\n  const char *advance_action, *skip_action, *up_action, *down_action; /* NULL: ui_accept, ui_back, ui_up, ui_down */\n  float reading_cps;         /* characters a second for a line with no voice (0: 14) */\n  float line_gap;            /* seconds after a voice ends before the next beat (0: 0.45) */\n  bool wait_for_advance;     /* a scene's line waits for advance after it ends (visual novel pacing); default off */\n  void (*on_line)(const cw_story_line *line, void *user);   /* a line starts (say, aside or bark) */\n  void (*on_shot)(const cw_story_shot *shot, void *user);   /* a shot beat, or a say with shot= */\n  void (*on_emit)(const char *name, int arg, void *user);   /* an emit beat: the game's events */\n  void (*on_scene_end)(const char *scene, bool skipped, void *user);\n  void *user;\n} cw_story_desc;"
+    }
+   ],
+   "macros": [
+    {
+     "name": "CW_STORY_SKIP_HOLD",
+     "doc": ""
+    },
+    {
+     "name": "CW_STORY_MAX_OPTIONS",
+     "doc": ""
+    }
+   ]
   },
   {
    "header": "cartwheel/stream.h",

@@ -424,7 +424,17 @@
   "unit-input-set-actions": 3,
   "unit-input-cart-touch": 3,
   "hex-board-hotseat": 10,
-  "shell-hot-seats": 6
+  "shell-hot-seats": 6,
+  "unit-story": 4,
+  "unit-director": 4,
+  "unit-director-shake": 4,
+  "story-scene": 20,
+  "story-skip": 20,
+  "story-barks": 45,
+  "speech-face": 40,
+  "director-shots": 45,
+  "director-shake": 45,
+  "story-tools": 10
  },
  "webgpu": {
   "water-open-sea": 2061,
@@ -643,6 +653,15 @@
   "unit-hex": 4,
   "unit-search": 6,
   "hex-board-hotseat": 14,
-  "shell-hot-seats": 8
+  "shell-hot-seats": 8,
+  "unit-story": 5,
+  "unit-director": 5,
+  "unit-director-shake": 5,
+  "story-scene": 26,
+  "story-skip": 26,
+  "story-barks": 59,
+  "speech-face": 52,
+  "director-shots": 59,
+  "director-shake": 59
  }
 }

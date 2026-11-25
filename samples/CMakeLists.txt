@@ -478,3 +478,18 @@ target_compile_definitions(looks_onebit_720 PRIVATE ONEBIT_H=720)
 # root colours from the terrain (cartwheel/foliage.h; gates foliage and foliage-field)
 cw_add_app(foliage_field SOURCES foliage_field/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/foliage_field/assets
   PROGRAMS foliage_field/programs/foliage_field.txt)
+
+# story, voice and cinematics (cartwheel/story.h, speech.h, director.h): one source three ways. story_scene plays a
+# scripted scene on the pad with voiced lines, faces, subtitles, choices and the director's shots; speech_face a
+# close-up speaking every line with each emotion; director_shots every shot type solved against three figures and the
+# walls. The character is character_skin's (and so is its program table: the same materials and lights).
+set(CW_STORY_ASSETS ${CMAKE_CURRENT_BINARY_DIR}/story_scene_assets)
+foreach(f main.cwscene main.cwstory main.cwspeech)
+  configure_file(${CMAKE_CURRENT_SOURCE_DIR}/story_scene/assets/${f} ${CW_STORY_ASSETS}/${f} COPYONLY)
+endforeach()
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/character_skin/assets/character.glb ${CW_STORY_ASSETS}/character.glb COPYONLY)
+foreach(app story_scene speech_face director_shots)
+  cw_add_app(${app} SOURCES story_scene/main.c ASSETS ${CW_STORY_ASSETS} PROGRAMS character_skin/programs/character_skin.txt)
+endforeach()
+target_compile_definitions(speech_face PRIVATE STORY_MODE=1)
+target_compile_definitions(director_shots PRIVATE STORY_MODE=2)

@@ -1,0 +1,56 @@
+[scene format=1]
+
+[node name="Level" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.42, 0.56, 0.72, 1)
+ambient_energy = 0.5
+hemi_energy = 0.8
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(2.6, 1.7, 3.6)
+fov = 40
+
+[node name="Key" parent="." type="DirectionalLight3D"]
+position = vec3(2, 4, 4)
+rotation = vec3(-0.55, 0.75, 0)
+color = color(1, 0.95, 0.86, 1)
+energy = 3.0
+shadow = true
+
+[node name="Rim" parent="." type="DirectionalLight3D"]
+position = vec3(-1, 2, -4)
+rotation = vec3(-0.25, 2.9, 0)
+color = color(0.8, 0.88, 1, 1)
+energy = 2.2
+
+[node name="Floor" parent="." type="MeshInstance3D"]
+primitive = PLANE
+size = vec3(30, 1, 30)
+color = color(0.36, 0.33, 0.28, 1)
+roughness = 0.9
+receive_shadow = true
+
+[node name="WallBack" parent="." type="MeshInstance3D"]
+primitive = BOX
+size = vec3(10, 2.6, 0.3)
+position = vec3(0, 1.3, -3.05)
+color = color(0.62, 0.55, 0.46, 1)
+roughness = 0.85
+receive_shadow = true
+
+[node name="WallEast" parent="." type="MeshInstance3D"]
+primitive = BOX
+size = vec3(0.3, 2.6, 7)
+position = vec3(3.55, 1.3, 0.5)
+color = color(0.6, 0.52, 0.44, 1)
+roughness = 0.85
+receive_shadow = true
+
+[node name="Pillar" parent="." type="MeshInstance3D"]
+primitive = BOX
+size = vec3(0.5, 2.4, 0.5)
+position = vec3(-2.35, 1.2, -0.95)
+color = color(0.55, 0.5, 0.45, 1)
+roughness = 0.8
+receive_shadow = true

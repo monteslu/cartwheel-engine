@@ -1,0 +1,107 @@
+[
+ {
+  "key": 2689934865,
+  "who": "keeper",
+  "voice": "bm_george",
+  "speed": 0.95,
+  "text": "Halt. Nobody crosses the bridge after dark."
+ },
+ {
+  "key": 4159435539,
+  "who": "traveller",
+  "voice": "af_heart",
+  "speed": 1,
+  "text": "It is barely dusk."
+ },
+ {
+  "key": 2377102624,
+  "who": "keeper",
+  "voice": "bm_george",
+  "speed": 0.95,
+  "text": "Then you have a little time to tell me who you are."
+ },
+ {
+  "key": 4014532807,
+  "who": "traveller",
+  "voice": "af_heart",
+  "speed": 1,
+  "text": "A courier from the coast, with letters for the hill."
+ },
+ {
+  "key": 298996689,
+  "who": "traveller",
+  "voice": "af_heart",
+  "speed": 1,
+  "text": "That is my business, keeper."
+ },
+ {
+  "key": 485799977,
+  "who": "keeper",
+  "voice": "bm_george",
+  "speed": 0.95,
+  "text": "The coast. Go on, then, and mind the third plank."
+ },
+ {
+  "key": 708961807,
+  "who": "keeper",
+  "voice": "bm_george",
+  "speed": 0.95,
+  "text": "Then your business waits here until morning."
+ },
+ {
+  "key": 1037122629,
+  "who": "keeper",
+  "voice": "bm_george",
+  "speed": 0.95,
+  "text": "Silence. Fine. Sit by the fire until you find your tongue."
+ },
+ {
+  "key": 392662103,
+  "who": "keeper",
+  "voice": "bm_george",
+  "speed": 0.95,
+  "text": "Safe roads."
+ },
+ {
+  "key": 3872826930,
+  "who": "keeper",
+  "voice": "bm_george",
+  "speed": 0.95,
+  "text": "Mind the cold."
+ },
+ {
+  "key": 2348967743,
+  "who": "keeper",
+  "voice": "bm_george",
+  "speed": 0.95,
+  "text": "The river is loud tonight."
+ },
+ {
+  "key": 200356463,
+  "who": "keeper",
+  "voice": "bm_george",
+  "speed": 0.95,
+  "text": "Mind the third plank."
+ },
+ {
+  "key": 3320758925,
+  "who": "keeper",
+  "voice": "bm_george",
+  "speed": 0.95,
+  "text": "Lanterns are lit at the far side."
+ },
+ {
+  "key": 1751406317,
+  "who": "keeper",
+  "voice": "bm_george",
+  "speed": 0.95,
+  "text": "You came back."
+ },
+ {
+  "key": 3409953186,
+  "who": "keeper",
+  "voice": "bm_george",
+  "speed": 0.95,
+  "text": "Still here?"
+ }
+]

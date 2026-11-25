@@ -36,6 +36,7 @@
         "game-shell",
         "animation",
         "audio",
+        "story-voice-director",
         "video",
         "networking",
         "l10n-a11y",
