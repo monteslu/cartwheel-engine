@@ -39,7 +39,7 @@
  * another subject's head or body crossed the line to the key point within dir_block_radius, or a ray hit: must stay
  * 0 for a clean shot), dir.away_frames (close-up frames whose face pointed away from the lens), dir.out_frames (key
  * point outside the frame), dir.reversals (frames where the
- * camera's motion turned back on itself along an axis outside a cut or a whip: a shake shows here, a smooth move
+ * camera's motion turned back on itself along an axis outside a cut, a whip or the ease back to the game's camera: a shake shows here, a smooth move
  * never does), dir.key_x, dir.key_y (the key point on screen, -1..1). */
 #ifndef CW_DIRECTOR_H
 #define CW_DIRECTOR_H

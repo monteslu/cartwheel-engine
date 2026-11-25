@@ -42,6 +42,7 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
   more); every instance and the instanced draws within 1% and 10% of SHRINK's; the grass covering over 0.9 of SHRINK's
   in the band (control: shrinking to nothing across it); no instance narrower than 0.79 of `scale_min` (control: the
   same dip made uniform); on a real GPU the field scene's GPU time with DITHER within 5% and 0.1 ms of SHRINK's.
+- The cinematic director (`cartwheel/director.h`) no longer counts its ease back to the game's camera as shake: `dir.reversals` (`CW_DIR_M_REVERSALS`) counted a turn in the camera's path during `cw_director_release`, where the ease blends in the game camera's own motion (one count at the end of a scene in Ember Throne's welcome). The count is of the director's shots now (the header says so); the shake gates' controls (handheld noise during a shot) still fail.
 
 ## v0.83.1 (2026-11-25)
 

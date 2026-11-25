@@ -596,7 +596,9 @@ static void recheck(cw_director *d, float dt) {
 /* the measures the gates read: what the live camera sees */
 static void measure(cw_director *d, float dt, v3 pos, v3 look, float fov, bool framed) {
   d->m_time += dt;
-  if (d->fresh || d->whip) d->m_n = 0; /* a cut, and a whip pan's designed swing, are not shake */
+  /* a cut, a whip pan's designed swing and the ease back to the game's camera (which blends in the game's own motion) are not
+   * shake: the count is of the director's shots */
+  if (d->fresh || d->whip || d->releasing) d->m_n = 0;
   if (dt > 0) {
     v3 v = scl(sub(pos, d->m_p0), 1 / dt);
     if (d->m_n >= 2) {
