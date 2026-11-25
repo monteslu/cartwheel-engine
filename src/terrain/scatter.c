@@ -17,6 +17,7 @@
  * shrinks to nothing over the last `fade` metres of visible_range. A cell
  * wholly inside one LOD's band and short of the fade keeps its last pose. */
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "cartwheel/debug.h"
@@ -67,6 +68,10 @@ struct tr_scatter {
   bool foliage;                   /* the materials are the layer's own copies with the foliage parts */
   bool pixel_dither;              /* DITHER drawn as the screen-door control (CW_TEST_FOLIAGE_PIXEL_DITHER), read each
                                    * update (pixel_dither_tick): its materials and its posing change together */
+  int xfade;                      /* DITHER's LOD crossfade per instance (XF_*; CW_TEST_SCATTER_XFADE, read each update) */
+  float xfade_dip;                /* XF_SWAP: how far an instance dips in size about its swap (0: none) */
+  float xfade_share;              /* XF_SWAP: the share of a band each instance takes to swap */
+  float xfade_wide;               /* XF_SWAP: the share of the dip its width takes (its height takes all of it) */
   float foliage_top;              /* LOD 0's top (the foliage parts' height) */
   float tint[3];                  /* the terrain material's colour when cells were last placed (root_from_terrain) */
 };
@@ -105,6 +110,38 @@ static float unit(uint32_t h) { return (float)(h >> 8) * (1.0f / 16777216.0f); }
 static bool pixel_dither(void) {
   const char *e = cw_test_env("CW_TEST_FOLIAGE_PIXEL_DITHER");
   return e && *e && *e != '0';
+}
+
+/* DITHER's LOD crossfade per instance. XF_SWAP (the default): one LOD per instance in any frame; each instance swaps
+ * to the next LOD at its own point of the band, over its own XFADE_SHARE of it: it lowers to 1 - XFADE_DIP of its
+ * height (and narrows by XFADE_WIDE of that: to 0.8 of its width), swaps at the lowest and grows back. Measured on
+ * samples/foliage_field (tests/foliage-xfade.mjs, foliage.mjs lod, foliage-grain.mjs): the cards dolly's largest block
+ * jump 22/255 with no dip (SHRINK's pop), 15 at a uniform dip of 0.5, 10 at 0.8 over 0.15 of the band, 9 with the
+ * width kept to 0.8 (8 overlapping); grain within the noise of SHRINK's. A uniform dip of 0.8 drew a tuft's blades a
+ * fifth as far apart, closer than the depth buffer tells apart (a game's coplanar check: 28 pairs; kept to 0.8 of the
+ * width, none).
+ * XF_OVERLAP (0.76.2 to 0.78.2, the control CW_TEST_SCATTER_XFADE=overlap): the next LOD grew in inside the instance
+ * and then the old one shrank away, so through the middle of its share both LODs drew it whole at one place:
+ * coincident opaque surfaces (two LODs of one tuft share blades millimetres apart: depth fighting) and 27% more
+ * instances in the band. CW_TEST_SCATTER_XFADE=swap:<dip>[:<share>] sets the dip (0 to 1) and the share. */
+enum { XF_SWAP = 0, XF_OVERLAP = 1 };
+#define XFADE_DIP 0.8f
+#define XFADE_SHARE 0.15f
+#define XFADE_WIDE 0.25f
+static void xfade_tick(tr_scatter *s) {
+  const char *e = cw_test_env("CW_TEST_SCATTER_XFADE");
+  int m = e && !strcmp(e, "overlap") ? XF_OVERLAP : XF_SWAP;
+  float dip = XFADE_DIP, share = XFADE_SHARE, wide = XFADE_WIDE;
+  if (e && !strncmp(e, "swap:", 5)) {
+    dip = CW_CLAMP((float)atof(e + 5), 0.0f, 1.0f);
+    const char *c = strchr(e + 5, ':');
+    if (c) share = CW_CLAMP((float)atof(c + 1), 0.05f, 1.0f), c = strchr(c + 1, ':');
+    if (c) wide = CW_CLAMP((float)atof(c + 1), 0.0f, 1.0f);
+  }
+  if (m == s->xfade && dip == s->xfade_dip && share == s->xfade_share && wide == s->xfade_wide) return;
+  s->xfade = m, s->xfade_dip = dip, s->xfade_share = share, s->xfade_wide = wide;
+  for (int i = 0; i < s->cnx * s->cnz; i++)
+    for (int v = 0; v < TR_VIEWS; v++) s->cells[i].v[v].posed_state = -2;
 }
 
 /* a layer's foliage description, without the fades */
@@ -528,6 +565,8 @@ static void pose_cells(int begin, int end, int worker, void *u) {
   int nl = j->s->nlod;
   float vr = d->visible_range, fs = vr - d->fade;
   bool dither = d->fade_mode == CW_SCATTER_FADE_DITHER, per_pixel = dither && j->s->pixel_dither;
+  int xf = j->s->xfade;
+  float dip = j->s->xfade_dip, xs = j->s->xfade_share, wide = j->s->xfade_wide, xst = 0;
   float hw = d->lod_blend * 0.5f, rr = j->s->radius * d->scale_max + d->wind.strength;
   for (int ci = begin; ci < end; ci++) {
     sc_cell *c = j->list[ci];
@@ -554,10 +593,12 @@ static void pose_cells(int begin, int end, int worker, void *u) {
         if (in[8] >= j->density) continue;
         float dist = sqrtf(d2[k]);
         if (dither && !per_pixel) {
-          /* each instance crosses each band at its own point (inst_hash), over its own share of the band: at a LOD
-           * crossfade the next LOD grows in inside it over the first half of that share and then it shrinks away
-           * over the second, and over the fade it shrinks away. Whole instances that change size smoothly: no
-           * pattern of dropped pixels for TAA to resolve (no dots in motion), no pop */
+          /* each instance crosses each band at its own point (inst_hash), over its own share of the band, and over
+           * the fade it shrinks away. Whole instances that change size smoothly: no pattern of dropped pixels for
+           * TAA to resolve (no dots in motion). At a LOD crossfade (XF_SWAP) it is drawn by one LOD only: it lowers
+           * over the first half of its own share of the band, swaps to the next LOD at its lowest and grows back
+           * over the second, so no two LODs of it ever stand in one place (no depth fighting) and it draws what
+           * SHRINK draws */
           if (dist >= vr) continue;
           float h = inst_hash(in), st = h * (1 - FADE_SHARE);
           float k = 1;
@@ -565,6 +606,35 @@ static void pose_cells(int begin, int end, int worker, void *u) {
             k = 1 - cw_smoothstep(st, st + FADE_SHARE, (dist - fs) / (vr - fs));
             if (k < 0.02f) continue;
           }
+          if (xf == XF_SWAP) {
+            xst = h * (1 - xs);
+            int l = 0;
+            float e = 0; /* how far into the dip (0: none, 1: the swap) */
+            for (; l + 1 < nl && d->lod_distance[l] - hw < fs; l++) {
+              float a = d->lod_distance[l];
+              float u = hw > 0 ? cw_clampf((dist - (a - hw)) / (2 * hw), 0, 1) : dist >= a ? 1.0f : 0.0f;
+              float w = hw > 0 ? cw_clampf((u - xst) / xs, 0, 1) : u;
+              if (w < 0.5f) { /* still LOD l: dipping towards its swap */
+                e = CW_MAX(e, cw_smoothstep(0, 0.5f, w));
+                break;
+              }
+              e = 1 - cw_smoothstep(0.5f, 1, w); /* LOD l + 1: growing back from the swap */
+            }
+            /* the dip lowers the instance by all of it and narrows it by the share `wide` of it: a uniform shrink
+             * would draw its parts closer together than the depth buffer tells apart (two blades of a tuft a
+             * centimetre apart at their roots, a fifth of that at a fifth of the size) */
+            float gy = 1 - dip * e, gx = 1 - dip * wide * e, kl = k * gy;
+            if (kl >= 0.02f) {
+              if (col[l]) memcpy(col[l] + 3 * cnt[l], &in[9], sizeof(float) * 3);
+              float *mm = dst[l] + 16 * cnt[l]++;
+              write_matrix(mm, in, kl, j->origin[0], j->origin[1]);
+              if (gx != gy)
+                for (int c = 0; c < 3; c++) mm[c] *= gx / gy, mm[8 + c] *= gx / gy; /* (local x and z: the width) */
+            }
+            continue;
+          }
+          /* XF_OVERLAP (the control): the next LOD grows in inside it over the first half of its share, then it
+           * shrinks away over the second */
           float grow = 1; /* the share this LOD has grown in (from the band before it) */
           for (int l = 0; l < nl; l++) {
             float shrink = 1, next_grow = 0;
@@ -628,7 +698,9 @@ static float cell_dist2(const float cam[3], const float mn[3], const float mx[3]
 
 /* DITHER: 2 l inside LOD l alone, 2 l + 1 in the band where LODs l and l + 1 both draw */
 static int dither_region(const tr_scatter *s, float dist) {
-  float hw = s->def.lod_blend * 0.5f, rr = s->radius * s->def.scale_max + s->def.wind.strength;
+  /* (the screen-door crossfades in the shaders, at every pixel: an instance within its reach of a band draws in both
+   * LODs; per instance the band is at its root, and a cell's box already holds its instances' reach) */
+  float hw = s->def.lod_blend * 0.5f, rr = s->pixel_dither ? s->radius * s->def.scale_max + s->def.wind.strength : 0;
   int r = 0;
   for (int l = 0; l + 1 < s->nlod; l++) {
     if (dist < s->def.lod_distance[l] - hw - rr) return r;
@@ -818,7 +890,7 @@ void cw__scatter_update(cw_terrain *t, t3_vec3 cam, const t3_mat4 *vp, int view,
   for (int i = 0; i < TR_MAX_SCATTER; i++)
     if (t->scatter[i]) {
       cw__scatter_attach(t, t->scatter[i]);
-      if (view == 0) pixel_dither_tick(t->scatter[i]);
+      if (view == 0) pixel_dither_tick(t->scatter[i]), xfade_tick(t->scatter[i]);
       scatter_one(t, t->scatter[i], cam, vp ? &fr : NULL, view, views);
     }
   t->stats.scatter_ms = (float)(tr_now_ms() - t0);

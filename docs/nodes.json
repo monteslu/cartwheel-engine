@@ -10726,7 +10726,7 @@
       "SHRINK",
       "DITHER"
      ],
-     "doc": "SHRINK: instances shrink over the fade and LODs switch at lod_distance. DITHER: each instance at its own distance: it shrinks away over its own share of the fade, and over the lod_blend metres the next LOD grows in inside it before it shrinks away (whole instances: no grain under TAA in motion, no pop)."
+     "doc": "SHRINK: instances shrink over the fade and LODs switch at lod_distance. DITHER: each instance at its own distance: it shrinks away over its own share of the fade, and over the lod_blend metres it lowers to a fifth of its height, swaps to the next LOD and grows back (one LOD of an instance at a time, whole instances: no grain under TAA in motion, no depth fighting between LODs, the pop softened and spread over the band)."
     },
     {
      "name": "lod_blend",

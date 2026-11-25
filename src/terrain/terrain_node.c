@@ -197,7 +197,7 @@ static void builtin_mesh(int shape, int lod, const float color[4], t3_geometry *
   if (shape == 0) {
     /* 12 curved blades of three segments near, 6 straight wider ones far (the same cover at a distance) */
     *g = lod ? tuft(6, 1, 0.05f) : tuft(12, 3, 0.03f);
-    mat->roughness = 0.8f;
+    mat->roughness = 1.0f;
   } else if (shape == 1) {
     static const float rock[][5] = { { 0.0f, -0.1f, 0.30f, 0.29f, 0.27f }, { 0.55f, 0.05f, 0.38f, 0.36f, 0.33f },
                                      { 0.50f, 0.35f, 0.45f, 0.43f, 0.40f }, { 0.25f, 0.55f, 0.50f, 0.48f, 0.45f },
@@ -393,7 +393,7 @@ static const cw_prop scatter_props[] = {
   CW_PROP_FIELD(scatter3d, smooth_alpha, CW_T_BOOL, CW_PROP_DEFAULT, "Alpha-tested meshes (leaf and grass cards): alpha to coverage under MSAA, hashed alpha TAA resolves without it: no stair-stepped or flickering edges."),
   CW_PROP_FIELD(scatter3d, two_sided_lighting, CW_T_BOOL, CW_PROP_DEFAULT, "Double-sided meshes: back faces lit with the front face's normal (no dark backs on leaves with up-bent normals)."),
   { .name = "fade_mode", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = offsetof(scatter3d, fade_mode), .size = sizeof(int),
-    .enum_names = fade_names, .doc = "SHRINK: instances shrink over the fade and LODs switch at lod_distance. DITHER: each instance at its own distance: it shrinks away over its own share of the fade, and over the lod_blend metres the next LOD grows in inside it before it shrinks away (whole instances: no grain under TAA in motion, no pop)." },
+    .enum_names = fade_names, .doc = "SHRINK: instances shrink over the fade and LODs switch at lod_distance. DITHER: each instance at its own distance: it shrinks away over its own share of the fade, and over the lod_blend metres it lowers to a fifth of its height, swaps to the next LOD and grows back (one LOD of an instance at a time, whole instances: no grain under TAA in motion, no depth fighting between LODs, the pop softened and spread over the band)." },
   CW_PROP_FIELD_RANGE(scatter3d, lod_blend, CW_T_FLOAT, 0, 1000, "DITHER: metres over which each LOD crossfades with the next, centred on its switch distance."),
   CW_PROP_FIELD_RANGE(scatter3d, tint_jitter, CW_T_FLOAT, -1, 1, "Per-instance colour variation 0..1 (brightness and a dry yellow); -1: the shape's own (GRASS 0.25, the rest none)."),
   CW_PROP_FIELD(scatter3d, root_from_terrain, CW_T_BOOL, CW_PROP_DEFAULT, "Each instance's lower part takes the terrain's colour under it (cw_terrain_albedo_at), blending into its own colour above."),

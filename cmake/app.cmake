@@ -385,7 +385,10 @@ function(cw_add_app name)
       COMMAND node ${CW_ROOT}/tools/check-imports.mjs $<TARGET_FILE:${name}> ${_wgpu_check}
       COMMAND node ${CW_ROOT}/tools/cart-version.mjs pack --version-file ${_ver_file} --wasc ${_wasc} --record ${_ver_record} ${_reuse}
               -- node ${_wc_pack} --wasm $<TARGET_FILE:${name}> --name ${name} ${_assets} ${_files} ${_meta}
-      COMMENT "cart ${name}.wasc")
+      COMMENT "cart ${name}.wasc"
+      # each argument quoted for the shell as it is (a bracket, an apostrophe or a quote in a TITLE, DESCRIPTION or AUTHOR broke
+      # the build: the shell read a quote as the start of a string and a bracket as a subshell; tests/cart-art.mjs)
+      VERBATIM)
   endif()
 endfunction()
 

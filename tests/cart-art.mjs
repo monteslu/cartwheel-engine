@@ -8,9 +8,18 @@
 //      the manifest naming each, a screenshot's label, the title, the
 //      credits, and wasmcart's describeArtProblems finds nothing wrong;
 //   3. built carts: hello.wasc (cw_add_app ART/TITLE/DESCRIPTION/AUTHOR)
-//      carries the same, and a sample without ART carries no art or title.
+//      carries the same, its title with brackets and its description with
+//      brackets, an apostrophe and double
+//      quotes byte for byte, and a sample without ART carries no art or title;
+//   4. the pack step quotes each argument for the shell: cmake/app.cmake
+//      gives cw_add_app's POST_BUILD command VERBATIM, and a scratch Ninja
+//      project running that command's shape with a title, description and
+//      author each holding ( ) ' and "
+//      builds and passes it through exactly.
 // CONTROLS that must fail: a cover of the wrong shape is reported by
-// describeArtProblems; the fixture packed without --title has no title.
+// describeArtProblems; the fixture packed without --title has no title; the
+// scratch project without VERBATIM (cw_add_app before the fix) fails to build
+// or mangles the value.
 //
 //   node tests/cart-art.mjs [--pack <wasmcart-pack.js>] [--carts <dir>]
 //
@@ -118,7 +127,7 @@ function checkArt(what, cart, desc, author, title) {
 if (existsSync(join(CARTS, 'hello.wasc'))) {
   const before = failed;
   checkArt('hello.wasc', join(CARTS, 'hello.wasc'),
-    'A spinning cube that moves with the stick and plays a tone while the south button is held.', 'The cartwheel authors', 'Hello Cube');
+    'A spinning cube that moves with the stick and plays a tone while the south button\'s held (the samples\' "hello").', 'The cartwheel authors', 'Hello Cube (a sample)');
   if (failed === before) {
     const other = openCart(join(CARTS, 'vertex_colors.wasc')).manifest;
     if (!other) fail('vertex_colors.wasc: no manifest');
@@ -127,5 +136,40 @@ if (existsSync(join(CARTS, 'hello.wasc'))) {
   }
 } else {
   console.log(`skip built carts: no ${join(CARTS, 'hello.wasc')}`);
+}
+// 4. the pack step's quoting
+{
+  const app = readFileSync(join(ROOT, 'cmake', 'app.cmake'), 'utf8');
+  const post = app.slice(app.lastIndexOf('add_custom_command(TARGET ${name} POST_BUILD', app.indexOf('cart-version.mjs pack')));
+  const block = post.slice(0, post.indexOf('\n  endif()'));
+  if (!/\bVERBATIM\)\s*$/.test(block.trim())) fail('cmake/app.cmake: the cart pack command (POST_BUILD) is not VERBATIM: a TITLE, DESCRIPTION or AUTHOR with a quote breaks the build');
+  else ok('cmake/app.cmake: the cart pack command is VERBATIM');
+  // every free-text field cw_add_app packs, each with ( ) ' " and other shell characters
+  const FIELDS = { title: 'Hello (the "Cube")', description: 'It\'s a "quoted" test: commas, (brackets) & $HOME', author: 'O\'Brien (and "friends") <x>' };
+  const WANT = Object.entries(FIELDS).flatMap(([k, v]) => [`--${k}`, v]);
+  const cmakeStr = (v) => '"' + v.replace(/[\\"$]/g, (c) => '\\' + c) + '"';
+  const scratch = (verbatim) => {
+    const dir = join(OUT, verbatim ? 'quote-verbatim' : 'quote-plain'), got = join(dir, 'args.json');
+    mkdirSync(join(dir, 'src'), { recursive: true });
+    writeFileSync(join(dir, 'src', 'dump.mjs'), 'import { writeFileSync } from "node:fs"; writeFileSync(process.argv[2], JSON.stringify(process.argv.slice(3)));\n');
+    writeFileSync(join(dir, 'src', 'CMakeLists.txt'), [
+      'cmake_minimum_required(VERSION 3.20)', 'project(quote NONE)',
+      // (the shape of cw_add_app's: the value appended to a list as one quoted argument, the list expanded in the command)
+      'set(_meta "")', ...Object.entries(FIELDS).map(([k, v]) => `list(APPEND _meta --${k} ${cmakeStr(v)})`),
+      `add_custom_target(dump ALL COMMAND node ${cmakeStr(join(dir, 'src', 'dump.mjs'))} ${cmakeStr(got)} \${_meta}${verbatim ? ' VERBATIM' : ''})`, '',
+    ].join('\n'));
+    const c = spawnSync('cmake', ['-S', join(dir, 'src'), '-B', join(dir, 'build'), '-G', 'Ninja'], { encoding: 'utf8' });
+    if (c.status !== 0) return { error: `configure: ${(c.stderr || c.stdout).trim().split('\n').pop()}` };
+    const b = spawnSync('ninja', ['-C', join(dir, 'build')], { encoding: 'utf8' });
+    if (b.status !== 0 || !existsSync(got)) return { built: false };
+    return { built: true, args: JSON.parse(readFileSync(got, 'utf8')) };
+  };
+  const v = scratch(true), p = scratch(false);
+  if (v.error) fail(`scratch project: ${v.error}`);
+  else if (!v.built || JSON.stringify(v.args) !== JSON.stringify(WANT)) fail(`VERBATIM: the fields did not come through (${v.built ? JSON.stringify(v.args) : 'the build failed'})`);
+  else ok(`VERBATIM: title, description and author ${JSON.stringify(Object.values(FIELDS))} reach the command exactly`);
+  if (p.error) fail(`control scratch project: ${p.error}`);
+  else if (p.built && JSON.stringify(p.args) === JSON.stringify(WANT)) fail('control: without VERBATIM the value still came through: the check above proves nothing');
+  else ok(`control: without VERBATIM ${p.built ? 'the value is mangled: ' + JSON.stringify(p.args) : 'the build fails'}`);
 }
 process.exit(failed ? 1 : 0);

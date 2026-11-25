@@ -79,8 +79,9 @@
  * shrink to nothing over the last `fade` metres of visible_range (no pop),
  * and switch mesh LOD by distance; with fade_mode DITHER each instance
  * crosses each band at its own distance instead: it shrinks away over its
- * own share of the fade, and at a LOD crossfade the next LOD grows in inside
- * it over its own share of the band before it shrinks away.
+ * own share of the fade, and at a LOD crossfade it swaps to the next LOD at
+ * its own point of the band, lowering to a fifth of its height about the swap
+ * (one LOD of an instance at a time: never two coincident surfaces).
  * A layer can also sway in the wind, smooth its cut-out edges, light its
  * leaves from both sides, vary or ground-colour each instance, bend around
  * movers and take one shadow sample per instance (cw_scatter_def's foliage
@@ -361,8 +362,9 @@ typedef struct cw_scatter_def {
   int fade_mode;            /* CW_SCATTER_FADE_SHRINK (instances shrink over the last `fade` metres, LODs switch at
                                lod_distance: the default) or CW_SCATTER_FADE_DITHER (each instance by its own number,
                                over its own 0.3 of a band: it shrinks away over the fade, and over the lod_blend metres
-                               round lod_distance the next LOD grows in inside it, then it shrinks away; whole instances,
-                               no pattern of dropped pixels for TAA to resolve, so no grain in motion and no pop) */
+                               round lod_distance it lowers to a fifth, swaps to the next LOD and grows back; one LOD of an
+                               instance at a time, whole instances, no pattern of dropped pixels for TAA to resolve, so
+                               no grain in motion, no depth fighting and a softened pop) */
   float lod_blend;          /* DITHER: metres of each LOD crossfade: 6 */
   float tint_jitter;        /* 0..1: each instance's colour varied by up to this (brightness and a dry yellow), an
                                instance colour: 0 */

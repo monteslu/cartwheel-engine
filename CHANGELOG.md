@@ -12,6 +12,37 @@ GitHub release. The guides in `docs/guides/` cover each feature in depth.
 - **MCTS margin reward** (`cartwheel/search.h`): `cw_search_options.reward` = `CW_SEARCH_REWARD_MARGIN`, the new default, scores a playout for each player as a logistic of its lead over the best other player, `1 / (1 + e^(-lead / reward_scale))`, `reward_scale` in `evaluate`'s units (default 4). `CW_SEARCH_REWARD_PLACE` keeps the old reward, each player's place between the lowest and highest score, under which the last of three or four players and the one behind of two scores 0 whatever it does, so a CPU that fell behind played at random. The default comes from measurement on the test dice game (a race to 20, 4000 nodes a move): head to head the margin is even with the place at two players and stronger at three (one margin seat 300 wins of a fair 240, one place seat 202) and four (287 against 192); against random seats both win the same; a seat 30 points behind with no way to win picks the move that closes the gap most in 17 to 18 of 20 searches on the margin and 0 on the place. Scales 8, 16 and 32 were each worse somewhere (scale 8 lost 2-player games to random seats). Searches that did not set `reward` now play differently. Guide [Game-tree search](docs/guides/game-search.md#the-mcts-reward).
 - Sample `texture_color` and gate `texture-color` (GL and WebGPU): five quads of the same flat grey read back on screen, a plain PNG (data), the same PNG after `cw_res_texture_set_srgb` (colour), and `cwpack` KTX2 with `texture.color = srgb`, `linear` and unset (colour, data, colour), each texture's colour space and its drawn value checked; control: the PNG loaded without the call, which must fail. A KTX2 from `cwpack` with `texture.color = srgb` already loaded as sRGB on both backends (drawn 128 on GL and WebGPU in a cart, unchanged by this release); the gate now holds it. Gate `unit-resource` checks the colour spaces and the call's refusals; `unit-search` checks the default reward, the seat behind closing the gap on the margin and not on the place, and logs the head-to-head numbers; its control (`CW_TEST_SEARCH_WEAK=1`) runs the seat behind on the place reward, which must fail.
 
+### Fixed
+
+- Grass no longer fights for the depth test at its LOD crossfade. Since v0.76.2, TerrainScatter3D's `fade_mode = DITHER`
+  crossfaded each instance by growing the next LOD in inside it and then shrinking the old one away, so through the
+  middle of its share of the band both LODs drew it at full size in one place. Two LODs of the built-in GRASS tuft
+  share blades a few millimetres apart: they had no depth order, and a meadow's coplanar check found 150 such pairs.
+  Each instance is now drawn by one LOD in any frame: at its own point of the band, over its own 0.15 of it, it lowers
+  to a fifth of its height (keeping 0.8 of its width), swaps to the next LOD at its lowest and grows back. Keeping the
+  width matters: a uniform dip to a fifth drew a tuft's own blades a fifth as far apart, closer than the depth buffer
+  tells apart. The swap draws what SHRINK draws: in the crossfade band of samples/foliage_field's meadow the same
+  instances a frame as SHRINK (791; the overlap drew 27% more, 267 of them twice), the same instanced draws, the grass
+  covering 0.937 of SHRINK's in the band. v0.76.2's grain fix holds: under TAA in a run and a pan the swap adds no
+  measurable grain over SHRINK. Test switch `CW_TEST_SCATTER_XFADE=overlap` draws the v0.76.2 crossfade (a control);
+  `swap:<dip>[:<share>[:<width share>]]` sets the swap's numbers. The per-instance posing also stops reposing cells
+  within an instance's reach of a band every frame (that reach is the screen-door's, CW_TEST_FOLIAGE_PIXEL_DITHER).
+- The built-in GRASS tuft is matte (roughness 1, was 0.8): at a glancing angle toward the light its up-bent blades
+  took the sky's sheen and a meadow's far grass read pale, almost white.
+- A cart's `TITLE`, `DESCRIPTION` or `AUTHOR` (cw_add_app) may hold brackets, an apostrophe or a double quote:
+  the cart pack command is VERBATIM, so each argument reaches wasmcart-pack as written. Before, the shell read a quote
+  as the start of a string and a bracket as a subshell, and the build failed. samples/hello's title holds brackets and
+  its description brackets, an apostrophe and quotes; tests/cart-art.mjs checks they come through byte for byte, that
+  the pack command is VERBATIM, and builds a scratch Ninja project whose title, description and author each hold
+  ( ) ' and " (control: the same project without VERBATIM fails to build).
+- Gate `foliage-xfade` (native and romdev, GL and WebGPU, CI on software rendering): samples/foliage_field reads back
+  every drawn instanced mesh each frame (`FOL_XF=1`, debug fields `xfade.double`, `xfade.inst`, `xfade.draws`,
+  `xfade.band`, `xfade.area`, `xfade.min_wide`) while the camera runs through the meadow: no instance root in two LODs
+  in any frame (control: the overlap); the instances in the band within 1% of SHRINK's (control: the overlap, over 5%
+  more); every instance and the instanced draws within 1% and 10% of SHRINK's; the grass covering over 0.9 of SHRINK's
+  in the band (control: shrinking to nothing across it); no instance narrower than 0.79 of `scale_min` (control: the
+  same dip made uniform); on a real GPU the field scene's GPU time with DITHER within 5% and 0.1 ms of SHRINK's.
+
 ## v0.83.1 (2026-11-25)
 
 ### Fixed

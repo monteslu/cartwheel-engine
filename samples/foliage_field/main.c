@@ -51,6 +51,16 @@
  *   fol.band          the dolly: those rows as 96 x 8 blocks of mean brightness per frame (bytes), for the same
  *                     difference block by block
  *   fol.gpu_ms        the pipeline's GPU time, averaged over the measured frames
+ *   xfade.double      FOL_XF=1: the most instances drawn by two LODs at one root in any measured frame (the scene's instanced
+ *                     meshes read back: an instance whose root two LODs' instance matrices both hold, within 1 mm:
+ *                     coincident opaque surfaces, which fight for the depth test)
+ *   xfade.inst, xfade.draws   the instances and the instanced draws (a part with instances) per measured frame, mean
+ *   xfade.band        the instances drawn with their roots in the GRASS layer's LOD crossfade (lod_distance give or
+ *                     take lod_blend / 2 from the camera) per measured frame, mean: SHRINK draws each of them once
+ *   xfade.area        their widths times their heights (as scales) summed, per measured frame, mean (how much of the
+ *                     band the grass covers)
+ *   xfade.min_wide    the narrowest of them, its width scale over the layer's scale_min (under 1: narrowed; a tuft's
+ *                     blades drawn that much closer together)
  *   bend.near_n, bend.far_n   bend: stems tracked that the mover passed (x under -0.4) and that it never came near
  *                     (x over 1.8: 1 m past its radius); each stem's presence:
  *                     the share of its tip window's rows that hold stem, over the same before the mover set off (1: standing
@@ -128,6 +138,10 @@ static bool all_on; /* FOL_SCENE <scene>_all: every option on (the program surve
 static bool grain;  /* FOL_SCENE grain: the shadow scene as a meadow (its grass and the grain.* measurement) */
 static float grain_dark_hf, grain_lit_hf, grain_edge_hf, grain_dark_t, grain_lit_t, grain_edge_t;
 static int32_t grain_n;
+static int32_t xfade_double;
+static float xfade_inst, xfade_draws, xfade_band, xfade_area, xfade_min_wide = 1e9f;
+static double xfade_inst_sum, xfade_draws_sum, xfade_band_sum, xfade_area_sum;
+static int xfade_n;
 static const char *env(const char *n) {
   const char *v = cw_test_env(n);
   if (v || !all_on) return v;
@@ -898,6 +912,65 @@ static void measure(int frame) {
   have_prev = true;
 }
 
+/* xfade.*: every drawn instanced mesh in the scene, read back. The parts of one LOD share its instance matrices
+ * (one attribute), so an instance at one root in two attributes is drawn by two LODs. */
+enum { XF_CAP = 1 << 18 };
+static uint64_t xf_key[XF_CAP];
+static const void *xf_attr[XF_CAP], *xf_attr2[XF_CAP]; /* the first LOD drawing a root, and a second */
+static int xf_double, xf_inst, xf_draws, xf_band;
+static double xf_area;
+static float xf_b0, xf_b1, xf_smin; /* the crossfade band's distances, the layer's scale_min */
+static void xfade_walk(t3_object *o) {
+  if (!o->visible) return;
+  if (o->type == T3_INSTANCED_MESH) {
+    t3_instanced_mesh *im = (t3_instanced_mesh *)o;
+    if (im->count > 0 && im->instance_matrix) {
+      xf_draws++;
+      const float *m = t3_attribute_f32(im->instance_matrix);
+      for (int k = 0; k < im->count; k++) {
+        const float *p = m + 16 * k + 12;
+        uint64_t key = ((uint64_t)(uint32_t)(int32_t)lrintf(p[0] * 1000) << 42) ^ ((uint64_t)(uint32_t)(int32_t)lrintf(p[1] * 1000) << 21) ^
+                       (uint64_t)(uint32_t)(int32_t)lrintf(p[2] * 1000);
+        key = key * 2 + 1; /* (0: an empty slot) */
+        float ddx = p[0] - cam_pos.x, ddy = p[1] - cam_pos.y, ddz = p[2] - cam_pos.z, dd = sqrtf(ddx * ddx + ddy * ddy + ddz * ddz);
+        bool in_band = dd >= xf_b0 && dd < xf_b1;
+        const float *c0 = m + 16 * k, *c1 = c0 + 4; /* (an instance's width and height: its matrix's first two columns) */
+        float wd = sqrtf(c0[0] * c0[0] + c0[1] * c0[1] + c0[2] * c0[2]);
+        if (in_band && xf_smin > 0 && wd / xf_smin < xfade_min_wide) xfade_min_wide = wd / xf_smin;
+        float sc2 = sqrtf((c0[0] * c0[0] + c0[1] * c0[1] + c0[2] * c0[2]) * (c1[0] * c1[0] + c1[1] * c1[1] + c1[2] * c1[2]));
+        uint32_t h = (uint32_t)((key * 0x9E3779B97F4A7C15ull) >> 46) & (XF_CAP - 1);
+        for (int probe = 0; probe < XF_CAP; probe++, h = (h + 1) & (XF_CAP - 1)) {
+          if (!xf_key[h]) {
+            xf_key[h] = key, xf_attr[h] = im->instance_matrix, xf_attr2[h] = NULL, xf_inst++, xf_band += in_band, xf_area += in_band ? sc2 : 0;
+            break;
+          }
+          if (xf_key[h] == key) { /* (another part of the same LOD draws the same instances: nothing new) */
+            if (xf_attr[h] != im->instance_matrix && !xf_attr2[h]) xf_attr2[h] = im->instance_matrix, xf_double++, xf_inst++, xf_band += in_band, xf_area += in_band ? sc2 : 0;
+            break;
+          }
+        }
+      }
+    }
+  }
+  for (int i = 0; i < o->child_count; i++) xfade_walk(o->children[i]);
+}
+static void xfade_measure(void) {
+  t3_object *o = cw_node3d_object(cam);
+  if (!o) return;
+  while (o->parent) o = o->parent;
+  memset(xf_key, 0, sizeof xf_key);
+  xf_double = xf_inst = xf_draws = xf_band = 0, xf_area = 0;
+  cw_value lv, bv;
+  float lod = cw_node_get_prop(grass_node, "lod_distance", &lv) ? (float)lv.f : 0, blend = cw_node_get_prop(grass_node, "lod_blend", &bv) ? (float)bv.f : 0;
+  xf_b0 = lod - blend * 0.5f, xf_b1 = lod + blend * 0.5f;
+  cw_value sv;
+  xf_smin = cw_node_get_prop(grass_node, "scale_min", &sv) ? (float)sv.f : 0;
+  xfade_walk(o);
+  if (xf_double > xfade_double) xfade_double = xf_double;
+  xfade_n++, xfade_inst_sum += xf_inst, xfade_draws_sum += xf_draws, xfade_band_sum += xf_band, xfade_area_sum += xf_area;
+  xfade_inst = (float)(xfade_inst_sum / xfade_n), xfade_draws = (float)(xfade_draws_sum / xfade_n), xfade_band = (float)(xfade_band_sum / xfade_n), xfade_area = (float)(xfade_area_sum / xfade_n);
+}
+
 static void colour_stats(void) {
   /* the instance colours of the GRASS layer's cell under the camera (the first scatter layer) */
   cw_terrain *t = cw_terrain_of(terrain_node);
@@ -972,6 +1045,12 @@ static void init(void *u) {
   cw_debug_f32("grain.edge_hf", &grain_edge_hf);
   cw_debug_f32("grain.edge_t", &grain_edge_t);
   cw_debug_i32("grain.n", &grain_n);
+  cw_debug_i32("xfade.double", &xfade_double);
+  cw_debug_f32("xfade.inst", &xfade_inst);
+  cw_debug_f32("xfade.draws", &xfade_draws);
+  cw_debug_f32("xfade.band", &xfade_band);
+  cw_debug_f32("xfade.area", &xfade_area);
+  cw_debug_f32("xfade.min_wide", &xfade_min_wide);
   place_camera(0);
 }
 
@@ -1014,6 +1093,7 @@ static void render(void *u, double alpha) {
   cw_terrain *t = cw_terrain_of(terrain_node);
   if ((!strcmp(scene, "wind") || !strcmp(scene, "bend")) && t && !tips_n && f == from - 2) pick_tips(t);
   if (f == from) colour_stats();
+  if (f >= from && env("FOL_XF")) xfade_measure();
   /* the pictures that have arrived, in order */
   while (nt) {
     int r = cw_gpu_read_result(tickets[0], cur);
