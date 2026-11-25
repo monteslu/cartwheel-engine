@@ -44,6 +44,7 @@ function runNative(name, env) {
   });
 }
 
+// players.* hold every seat (CW_INPUT_MAX_PLAYERS, 8 since v0.79.0): seats past the four pads must stay idle
 const pads = (s, k) => [0, 1, 2, 3].map((i) => s[`cw.pad${i}.${k}`]);
 function check(name, s, want) {
   if (s.error) { failed++; console.log(`FAIL ${name}: the run failed: ${s.error}`); return; }
@@ -59,10 +60,10 @@ try {
   // plugged in one at a time (two at once reach SDL in either order), then let udev settle
   await v.send('add 0', 'wait 300', 'add 1', 'wait 300', 'btn 0 south 1', 'btn 1 east 1', 'wait 700');
   check('two controllers at start: pads 0 and 1 only', await runNative('two', { CW_TEST_PADS: '1' }),
-    { connected: [1, 1, 0, 0], buttons: [1, 2, 0, 0], jump_jp: [1, 0, 0, 0] });
+    { connected: [1, 1, 0, 0], buttons: [1, 2, 0, 0], jump_jp: [1, 0, 0, 0, 0, 0, 0, 0] });
   await v.send('add 2', 'wait 300', 'add 3', 'wait 300', 'btn 2 west 1', 'btn 3 north 1', 'btn 3 south 1', 'abs 3 lx -32768', 'wait 700');
   check('four controllers: each its own pad and player', await runNative('four', { CW_TEST_PADS: '1' }),
-    { connected: [1, 1, 1, 1], buttons: [1, 2, 4, 9], lx: [0, 0, 0, -1], jump_jp: [1, 0, 0, 1], axis: [0, 0, 0, -FRAMES] });
+    { connected: [1, 1, 1, 1], buttons: [1, 2, 4, 9], lx: [0, 0, 0, -1], jump_jp: [1, 0, 0, 1, 0, 0, 0, 0], axis: [0, 0, 0, -FRAMES, 0, 0, 0, 0] });
   // CONTROL: the same controllers, CW_TEST_PADS unset: the test run's neutral pads
   const c = await runNative('control', { CW_TEST_PADS: '0' });
   if (c.error || JSON.stringify(pads(c, 'connected')) !== '[1,0,0,0]') {
