@@ -18,7 +18,9 @@
  *
  * Test switches:
  *   HEX_BOARD_SEATS=a,b,... (cw_test_env): skip the menus, start with up to eight seats (-1 a person on the next pad,
- *     -2 a hot seat, 0..2 a CPU at that level), e.g. "-1,0,1,2" or "-2,-2,-2,-2,-2,-2,-2,-2".
+ *     -2 a hot seat, 0..2 a CPU at that level), e.g. "-1,0,1,2" or "-2,-2,-2,-2,-2,-2,-2,-2". Read in the shell's
+ *     menu_update, which runs on every tick the menus own in any app (a scene app's paused tree calls no fixed_update
+ *     at the title, so a start there would never run: cartwheel/shell.h, the pause rule).
  *   The debug request `replay`: stop the recording the match started, put the game back as the match began, and replay
  *     it; when it ends, game.replay_match says the state came out the same and game.replay_hash_match that the input
  *     hash did. CW_TEST_SET_UNRECORDED=1 is its control (the CPUs' actions left out of the recording). */
@@ -290,11 +292,27 @@ static void cmd_replay(int argc, const char **argv, cw_reply *r) {
   cw_reply_printf(r, "{\"ticks\":%u,\"bytes\":%zu,\"state\":%u,\"input\":%u}", ticks, len, G.want_state, G.want_input);
 }
 
+/* the menus' tick (cw_shell_desc.menu_update): the test start, at the title */
+static void menu_update(cw_shell_screen screen, void *user) {
+  (void)user;
+  const char *seats = !G.started_by_env && screen == CW_SHELL_TITLE ? cw_test_env("HEX_BOARD_SEATS") : NULL;
+  if (!seats || !*seats) return;
+  int cpu[NP], n = 0;
+  for (const char *c = seats; *c && n < NP; n++) {
+    cpu[n] = atoi(c);
+    c = strchr(c, ',');
+    if (!c) { n++; break; }
+    c++;
+  }
+  G.started_by_env = true;
+  cw_shell_start_seats(n, cpu);
+}
+
 static void init(void *user) {
   (void)user;
   /* #region shell */
   cw_shell_desc d = { .title = "Hex Board", .subtitle = "people and CPUs, one board", .max_players = NP, .cpu_seats = true,
-                      .hot_seats = true, .start = start, .players_changed = players_changed };
+                      .hot_seats = true, .start = start, .players_changed = players_changed, .menu_update = menu_update };
   for (int p = 0; p < NP; p++) d.seat_names[p] = SEAT_NAME[p], d.seat_colors[p] = cw_hex(COL[p]);
   cw_shell_init(&d);
   /* #endregion */
@@ -333,18 +351,6 @@ static void init(void *user) {
 
 static void fixed_update(void *user, double dt) {
   (void)user, (void)dt;
-  const char *seats = !G.started_by_env && cw_shell_screen_now() == CW_SHELL_TITLE ? cw_test_env("HEX_BOARD_SEATS") : NULL;
-  if (seats && *seats) {
-    int cpu[NP], n = 0;
-    for (const char *c = seats; *c && n < NP; n++) {
-      cpu[n] = atoi(c);
-      c = strchr(c, ',');
-      if (!c) { n++; break; }
-      c++;
-    }
-    G.started_by_env = true;
-    cw_shell_start_seats(n, cpu);
-  }
   if (!cw_shell_update()) return;
   if (G.fresh) { /* the tick the match began in is not recorded: play starts at the next */
     G.fresh = false;

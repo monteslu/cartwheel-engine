@@ -12,8 +12,16 @@ typedef struct cw__slot {
   uint8_t flags;
   int16_t raw;
 } cw__slot;
+/* The pointer in a snapshot (the recorded pointer channel, cw_input_pointer_channel): the CW__PTR_* flags and where it
+ * is, in 1/16 steps of a logical window pixel, so a replay reads back the same position on every host. */
+enum { CW__PTR_PRESENT = 1, CW__PTR_DOWN = 2, CW__PTR_PRESSED = 4, CW__PTR_RELEASED = 8, CW__PTR_TOUCH = 16, CW__PTR_SECONDARY = 32 };
+typedef struct cw__ptr {
+  uint8_t flags;
+  int32_t x, y;
+} cw__ptr;
 typedef struct cw__snapshot {
   cw__slot s[CW_INPUT_MAX_PLAYERS][CW_INPUT_MAX_ACTIONS];
+  cw__ptr ptr;
 } cw__snapshot;
 
 typedef struct cw__action_def {
@@ -64,6 +72,10 @@ typedef struct cw__input_state {
   /* the first pointer tap a frame saw (a left click, or any finger landing), kept for the next tick the same way */
   bool pend_tap, tick_tap;
   float pend_tap_x, pend_tap_y, tick_tap_x, tick_tap_y;
+  /* the pointer channel (cw_input_pointer_channel): on, the frame's pointer, a release a frame saw since the last tick */
+  bool pointer_on;
+  cw__ptr frame_ptr;
+  bool pend_release;
   cw_input_context ctx;
   cw_raw_input prev_raw;
   /* touch */
@@ -109,6 +121,7 @@ void cw__touch_update(const cw_raw_input *raw); /* touch.c: lay out, claim and s
 bool cw__action_bind_quiet(cw_action a, cw_binding b);
 int16_t cw__input_quant(float v);
 uint32_t cw__snapshot_hash(const cw__snapshot *s, int count, uint32_t h);
+uint32_t cw__pointer_hash(const cw__ptr *p, uint32_t h); /* a tick's pointer into a stream hash (the channel on) */
 
 /* replay.c */
 void cw__input_register_commands(void); /* the debug channel's record command */
@@ -116,6 +129,7 @@ void cw__input_record_tick(const cw__snapshot *s);
 void cw__input_tick_close(void); /* input.c: hash (and record) the open tick */
 bool cw__input_record_skip_set(void); /* replay.c: the gate control CW_TEST_SET_UNRECORDED (set actions left out of the recording) */
 bool cw__input_replay_next(void); /* fills cw__in.tick_replay; false when no replay is running */
+bool cw__input_replay_pointer(void); /* replay.c: the running replay carries the pointer channel */
 void cw__input_replay_free(void);
 
 /* The raw presses of this tick, for code reading devices rather than actions (the game shell's join screen): each

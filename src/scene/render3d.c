@@ -75,8 +75,10 @@ typedef struct mesh_look {
   t3_color color, emissive, sheen_color;
   float metalness, roughness, ior, specular_intensity, clearcoat, clearcoat_roughness, sheen, sheen_roughness, iridescence,
       iridescence_ior, anisotropy, diffuse_roughness;
+  float opacity; /* below 1: a transparent material (opacity) */
+  float pad2_;   /* explicit, so a look has no tail padding on 64-bit hosts (memcmp) */
 } mesh_look;
-_Static_assert(offsetof(mesh_look, vp_tex) == 4 * sizeof(int) && sizeof(mesh_look) == offsetof(mesh_look, diffuse_roughness) + sizeof(float),
+_Static_assert(offsetof(mesh_look, vp_tex) == 4 * sizeof(int) && sizeof(mesh_look) == offsetof(mesh_look, pad2_) + sizeof(float),
                "mesh_look must have no padding (looks are compared with memcmp)");
 struct look_mat { mesh_look look; t3_material *mat; };
 
@@ -311,6 +313,11 @@ typedef struct mesh3d {
   int lightmap_uv;          /* GENERATED, UV0 */
   mesh_look look;           /* what m->mat draws (a primitive's material, shared by look) */
   const char *viewport_texture; /* "viewport://Name" or Name: a SubViewport's picture on the primitive */
+  float opacity;            /* 1 opaque; below 1 see-through (a ghost preview): primitives by look, others by clones */
+  struct ghost_rec *ghost;  /* a mesh resource's or a procedural mesh's materials swapped for transparent clones */
+  int ghost_n, ghost_cap;
+  t3_object *ghost_obj;     /* the object the clones are in */
+  float ghost_built;        /* the opacity the clones carry (1: none) */
   int viewport_slot;        /* EMISSIVE, COLOR */
   t3_material *lm_mat;      /* the mesh's material, cloned to carry its own lightmap */
   t3_material *lm_src;      /* the material lm_mat was made from (a LightmapGI shading change remakes it from this) */
@@ -376,6 +383,82 @@ static void mesh_init(cw_node n, void *data) {
   m->vis.impostor_fade = 5;
   m->lightmap_scale = 1;
   m->toon_bands = 3;
+  m->opacity = 1;
+  m->ghost_built = 1;
+}
+
+/* ── opacity on a mesh resource or a procedural mesh: each material it draws with is swapped for a clone of the node's
+ * own, transparent with the source's opacity times the node's; back to the sources at 1 (a primitive's opacity is part
+ * of its look instead, so ghosts with the same look share a material). ── */
+typedef struct ghost_rec { t3_mesh *mesh; int slot; t3_material *src, *clone; } ghost_rec;
+
+/* the sources back where clones are, every reference dropped */
+static void ghost_restore(mesh3d *m) {
+  for (int i = 0; i < m->ghost_n; i++) {
+    ghost_rec *g = &m->ghost[i];
+    if (m->ghost_obj && g->slot < g->mesh->material_count && g->mesh->materials[g->slot] == g->clone) {
+      t3_retain(g->src);
+      t3_release(g->mesh->materials[g->slot]);
+      g->mesh->materials[g->slot] = g->src;
+    }
+    t3_release(g->src);
+    t3_release(g->clone);
+    t3_release(g->mesh);
+  }
+  m->ghost_n = 0;
+  m->ghost_obj = NULL;
+  m->ghost_built = 1;
+}
+
+typedef struct { mesh3d *m; float opacity; } ghost_ctx;
+static void ghost_visit(t3_object *o, void *u) {
+  ghost_ctx *c = u;
+  if (o->type != T3_MESH && o->type != T3_SKINNED_MESH && o->type != T3_INSTANCED_MESH) return;
+  t3_mesh *me = (t3_mesh *)o;
+  mesh3d *m = c->m;
+  for (int k = 0; k < me->material_count; k++) {
+    t3_material *cur = me->materials[k];
+    if (!cur) continue;
+    ghost_rec *g = NULL;
+    for (int i = 0; i < m->ghost_n && !g; i++)
+      if (m->ghost[i].mesh == me && m->ghost[i].slot == k) g = &m->ghost[i];
+    if (g && cur != g->clone) { /* the slot was given another material since: that one is the source now */
+      t3_release(g->src);
+      t3_release(g->clone);
+      g->src = t3_retain(cur);
+      g->clone = NULL;
+    }
+    if (!g) {
+      if (m->ghost_n == m->ghost_cap) {
+        m->ghost_cap = m->ghost_cap ? m->ghost_cap * 2 : 8;
+        m->ghost = cw_realloc(m->ghost, (size_t)m->ghost_cap * sizeof *m->ghost, CW_MEM_RENDER);
+      }
+      g = &m->ghost[m->ghost_n++];
+      *g = (ghost_rec){ t3_retain(me), k, t3_retain(cur), NULL };
+    }
+    if (!g->clone) {
+      g->clone = t3_material_clone(g->src);
+      t3_release(me->materials[k]);
+      me->materials[k] = t3_retain(g->clone);
+    }
+    g->clone->opacity = g->src->opacity * c->opacity;
+    if (!g->clone->transparent) g->clone->transparent = true, g->clone->version++;
+  }
+}
+
+/* the drawn object's materials as the node's opacity says */
+static void ghost_sync(mesh3d *m, t3_object *obj) {
+  if (m->opacity >= 1 || !obj) {
+    if (m->ghost_n) ghost_restore(m);
+    return;
+  }
+  if (m->ghost_obj != obj) {
+    if (m->ghost_n) ghost_restore(m);
+    m->ghost_obj = obj;
+  }
+  ghost_ctx c = { m, CW_CLAMP(m->opacity, 0.0f, 1.0f) };
+  t3_object_traverse(obj, ghost_visit, &c);
+  m->ghost_built = m->opacity;
 }
 
 /* A mesh resource by UID: a glTF scene (instanced: geometry, materials and
@@ -393,6 +476,7 @@ static bool mesh_res_rebuild(cw_node n, mesh3d *m) {
   if (m->built_mesh == m->mesh && m->built_version == cw_res_version(m->res)) {
     /* shading or toon_bands changed: the instance's materials are made again from the resource's */
     if (m->res_obj && (m->built_shading != m->shading || m->built_bands != m->toon_bands)) {
+      if (m->ghost_n) ghost_restore(m); /* the sources back first: the toon swap works on them (opacity clones again after) */
       cw_toon_restore_tree(m->res_obj);
       if (m->shading == SHADING_TOON) cw_toon_apply_tree(m->res_obj, m->toon_bands);
       m->built_shading = m->shading;
@@ -452,6 +536,7 @@ static mesh_look look_of(const mesh3d *m) {
   k.physical = !k.toon && mesh_physical(m);
   k.color = m->color;
   k.emissive = m->emissive;
+  k.opacity = m->opacity < 1 ? CW_MAX(m->opacity, 0.0f) : 1.0f;
   if (k.toon) return k; /* a toon surface has no roughness, metalness or lobes */
   k.metalness = m->metalness;
   k.roughness = m->roughness;
@@ -473,6 +558,8 @@ static mesh_look look_of(const mesh3d *m) {
 
 static void look_apply(t3_material *t, const mesh_look *k) {
   t->color = k->color;
+  t->opacity = k->opacity;
+  if (t->transparent != (k->opacity < 1)) t->transparent = k->opacity < 1, t->version++; /* a program state of its own ("trans") */
   if (t->type == T3_MESH_TOON_MATERIAL) {
     t->emissive = k->emissive;
     return;
@@ -595,7 +682,7 @@ static bool mesh_physical(const mesh3d *m) {
 
 /* a static batch draws it (cartwheel/static_batch.h); a mesh with a lightmap of its own keeps its own draw */
 static void mesh_batch(cw_node n, mesh3d *m) {
-  if (m->batch && !m->lm_mat && !m->lightmapped) {
+  if (m->batch && !m->lm_mat && !m->lightmapped && m->opacity >= 1) { /* a see-through mesh draws on its own, sorted */
     t3_object *drawn = m->res_obj ? m->res_obj : m->t3 ? &m->t3->base : NULL;
     bool cast = m->procedural && m->t3 ? m->t3->base.cast_shadow : m->cast_shadow;
     bool receive = m->procedural && m->t3 ? m->t3->base.receive_shadow : m->receive_shadow;
@@ -608,8 +695,13 @@ static void mesh_batch(cw_node n, mesh3d *m) {
 static void mesh_pre_render(cw_node n, void *data, double alpha) {
   (void)alpha;
   mesh3d *m = data;
-  if (m->procedural) { mesh_batch(n, m); return; }
+  if (m->procedural) {
+    if (m->opacity < 1 || m->ghost_n) ghost_sync(m, m->t3 ? &m->t3->base : NULL);
+    mesh_batch(n, m);
+    return;
+  }
   mesh_rebuild(n, m);
+  if (m->opacity < 1 || m->ghost_n) ghost_sync(m, m->res_obj);
   if (m->mat) {
     mesh_look k = look_of_node(n, m);
     /* a lightmapped primitive draws with a material of its own (it carries
@@ -631,6 +723,10 @@ static void mesh_destroy(cw_node n, void *data) {
   (void)n;
   mesh3d *m = data;
   cw__sbatch_remove(&m->batch_rec);
+  ghost_restore(m);
+  cw_free(m->ghost);
+  m->ghost = NULL;
+  m->ghost_cap = 0;
   if (m->mat) t3_release(m->mat);
   m->mat = NULL;
   if (m->lm_mat) t3_release(m->lm_mat);
@@ -660,6 +756,7 @@ static const cw_prop mesh_props[] = {
   CW_PROP_FIELD_RANGE(mesh3d, anisotropy, CW_T_FLOAT, 0, 1, "Physical: stretched highlights, brushed metal (0 = none)."),
   CW_PROP_FIELD_RANGE(mesh3d, diffuse_roughness, CW_T_FLOAT, 0, 1, "Physical: rough diffuse, dusty or chalky surfaces that look flat at grazing angles (0 = smooth, plastic-like)."),
   CW_PROP_FIELD(mesh3d, emissive, CW_T_COLOR, CW_PROP_DEFAULT, "Emitted light colour."),
+  CW_PROP_FIELD_RANGE(mesh3d, opacity, CW_T_FLOAT, 0, 1, "1 opaque; below 1 see-through (a ghost preview of a move): the material turns transparent at this opacity, one program state per material state drawn so (\"+trans\"). A mesh resource's or a procedural mesh's materials are cloned for the node, times their own opacity; primitives with the same look share one. Leaves static batches; set cast_shadow false for no shadow."),
   { .name = "shading", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = offsetof(mesh3d, shading), .size = sizeof(int),
     .enum_names = shading_names,
     .doc = "STANDARD: physically based. TOON: flat tones with hard edges between them (three.js MeshToonMaterial); the primitive, "
@@ -733,6 +830,7 @@ bool cw_mesh3d_set_procedural(cw_node n, t3_mesh *mesh) {
   m->built_mesh = 0; m->built_version = 0;
   m->built_primitive = -1; m->lod = 0;
   m->procedural = mesh != NULL;
+  if (m->ghost_n) ghost_restore(m); /* the clones belonged to the old object */
   if (mesh) { t3_object_add(group, mesh); m->t3 = mesh; }
   return true;
 }
@@ -777,6 +875,7 @@ bool cw__mesh3d_info(cw_node n, cw__mesh_info *out) {
     out->lod_levels = m->lightmapped ? 1 : cm ? CW_MAX(cm->lod_count, 1) : gl ? CW_MAX(gl->lod_levels, 1) : 1;
     k = mix_key(k, m->mesh);
     k = mix_key(k, 7);
+    if (m->opacity < 1) k = mix_key(k, float_bits(m->opacity));
     if (m->shading) k = mix_key(k, (uint64_t)(m->shading * 32 + m->toon_bands));
   } else if (m->t3) {
     out->obj = &m->t3->base;
@@ -795,6 +894,7 @@ bool cw__mesh3d_info(cw_node n, cw__mesh_info *out) {
     k = mix_key(k, float_bits(m->emissive.r));
     k = mix_key(k, float_bits(m->emissive.g));
     k = mix_key(k, float_bits(m->emissive.b));
+    if (m->opacity < 1) k = mix_key(k, float_bits(m->opacity));
     if (m->shading) k = mix_key(k, (uint64_t)(m->shading * 32 + m->toon_bands));
   }
   out->look_key = k;

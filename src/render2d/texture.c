@@ -599,9 +599,11 @@ static void target_free_gl(r2d_tex *t) {
   t->fbo = t->depth_rb = 0;
 }
 
+void (*cw__r2d_target_freed_hook)(cw_texture t); /* src/render/target_texture.c: the target's 3D copy goes with it */
 void cw_texture_destroy(cw_texture h) {
   r2d_tex *t = r2d_tex_get(h);
   if (!t) return;
+  if (t->target && cw__r2d_target_freed_hook) cw__r2d_target_freed_hook(h);
   if (!R.arrays.data[t->array].atlas) r2d_array_free(t->array);
   target_free_gl(t);
   cw_pool_release(&R.textures, h.id);
@@ -711,6 +713,13 @@ void *cw__r2d_target_three_view(cw_texture h, int *w, int *hh) {
  * renderer's: nothing about the target changes); NULL on GL or for a handle that is not a target */
 void *cw__r2d_target_wgpu_texture(cw_texture h);
 unsigned cw__r2d_target_gl_array(cw_texture h); /* GL: the target's GL_TEXTURE_2D_ARRAY (one layer), 0 on WebGPU */
+/* target_texture.c: the target's rows go bottom-up (the 2D renderer's, a pipeline's) rather than top-down (three.c drew
+ * it through cw_render3d_texture_target on WebGPU) */
+bool cw__r2d_target_rows_up(cw_texture h);
+bool cw__r2d_target_rows_up(cw_texture h) {
+  r2d_tex *t = r2d_tex_get(h);
+  return !t || t->y_up;
+}
 unsigned cw__r2d_target_gl_array(cw_texture h) {
   r2d_tex *t = r2d_tex_get(h);
   return t && t->target && !r2d_wg() ? R.arrays.data[t->array].tex : 0;

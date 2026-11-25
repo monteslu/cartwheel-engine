@@ -1,0 +1,20 @@
+[scene format=1]
+
+[node name="World" type="Node3D"]
+
+[node name="Env" parent="." type="WorldEnvironment"]
+background = color(0.05, 0.06, 0.08, 1)
+ambient_energy = 0.35
+hemi_energy = 0.4
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+rotation = vec3(-1.2, 0.3, 0)
+energy = 3
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 10, 0)
+rotation = vec3(-1.5707963, 0, 0)
+projection = ORTHOGONAL
+size = 6
+near = 0.1
+far = 30

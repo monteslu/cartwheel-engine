@@ -1,8 +1,9 @@
 /* The input module driven directly (cw_input_frame_begin / tick_begin /
  * ticks_end) with synthetic raw input: the tick-vs-frame edge cases a host
  * cannot script (a press inside one frame's event batch, frames with no
- * tick), deadzones, vectors, text bindings, capture, touch, replay and actions
- * the game sets for a CPU seat (with the control CW_TEST_SET_UNRECORDED). */
+ * tick), deadzones, vectors, text bindings, capture, touch, replay, actions
+ * the game sets for a CPU seat (with the control CW_TEST_SET_UNRECORDED) and
+ * the recorded pointer channel (with the control CW_TEST_POINTER_UNRECORDED). */
 #include <stdlib.h>
 #include <string.h>
 
@@ -752,8 +753,171 @@ static void touch_cases(void) {
           cw_test_failed == before ? "ok" : "FAILED");
 }
 
+/* ── the pointer channel (cw_input_pointer_channel) ──────────────────── */
+
+/* the pointer of each tick, as fixed_update reads it */
+typedef struct { uint8_t f; int32_t x, y; } ptr_seen;
+static ptr_seen ptr_now(void) {
+  cw_pointer p = cw_input_pointer();
+  ptr_seen o = { (uint8_t)(p.present | p.down << 1 | p.pressed << 2 | p.released << 3 | p.touch << 4 | p.secondary << 5),
+                 (int32_t)(p.pos.x * 16.0f), (int32_t)(p.pos.y * 16.0f) };
+  return o;
+}
+
+/* a board the pointer plays: a click toggles the cell under it, a drag counts the cells it crosses, a release
+ * scores; the rules read the pointer and an action, never the devices */
+typedef struct { uint8_t cell[64]; int32_t drag, releases, score, last; } ptr_toy;
+static void ptr_toy_tick(ptr_toy *g) {
+  cw_pointer p = cw_input_pointer();
+  int c = p.present ? CW_CLAMP((int)(p.pos.x / 80.0f), 0, 7) + 8 * CW_CLAMP((int)(p.pos.y / 60.0f), 0, 7) : -1;
+  if (p.pressed && c >= 0) g->cell[c] ^= 1;
+  if (p.down && c != g->last) g->drag++;
+  if (p.released) g->releases++, g->score += c * (p.touch ? 3 : 1);
+  if (cw_action_just_pressed(0, 0)) g->score += 1000;
+  g->last = c;
+}
+enum { PTR_FRAMES = 900, PTR_TICKS_MAX = 2800 };
+static ptr_seen ptr_live_seen[PTR_TICKS_MAX];
+static uint32_t ptr_run(bool record, const uint8_t *replay, size_t replay_len, bool on, ptr_toy *out, int *ticks, int *mismatch) {
+  fresh();
+  cw_action_add("place", 0.5f);
+  cw_action_bind_text(0, "pad:south, key:space");
+  cw_input_pointer_channel(on);
+  if (record) cw_input_record_begin();
+  if (replay) cw_input_replay_begin(replay, replay_len);
+  ptr_toy g = { 0 };
+  g.last = -1;
+  cw_rng rng;
+  cw_rng_seed(&rng, 4242);
+  int nt = 0;
+  for (int f = 0; f < PTR_FRAMES; f++) {
+    if (!replay) { /* a person on the mouse and the screen, live */
+      raw.mouse_present = true;
+      if (cw_rng_int(&rng, 0, 2) == 0) raw.mouse_x = cw_rng_range(&rng, 0, 640), raw.mouse_y = cw_rng_range(&rng, 0, 480);
+      if (cw_rng_int(&rng, 0, 9) == 0) { /* a click, sometimes up again inside the frame */
+        raw.mouse_pressed |= 1u;
+        raw.mouse_buttons = cw_rng_int(&rng, 0, 1) ? 1u : 0u;
+      } else if (cw_rng_int(&rng, 0, 7) == 0) raw.mouse_buttons = 0;
+      raw.mouse_buttons = (raw.mouse_buttons & 1u) | (cw_rng_int(&rng, 0, 15) == 0 ? 2u : 0u);
+      if (cw_rng_int(&rng, 0, 40) == 0) { /* a finger lands where the mouse is not */
+        raw.mouse_present = false, raw.mouse_buttons = 0;
+        raw.touches[0] = (cw_touch_state){ .active = true, .tapped = true, .x = cw_rng_range(&rng, 0, 640), .y = cw_rng_range(&rng, 0, 480) };
+      } else raw.touches[0].active = false;
+      raw.pads[0].buttons = cw_rng_int(&rng, 0, 30) == 0 ? 1u << CW_PAD_SOUTH : 0;
+    } else memset(&raw, 0, sizeof raw); /* a replay: nothing live at all */
+    cw_input_frame_begin(&raw);
+    int ticks_now = f % 4 == 3 ? 0 : f % 5 == 4 ? 3 : 1; /* frames with no tick and with several */
+    for (int t = 0; t < ticks_now && nt < PTR_TICKS_MAX; t++, nt++) {
+      cw_input_tick_begin();
+      ptr_seen ps = ptr_now();
+      if (record) ptr_live_seen[nt] = ps;
+      else if (mismatch && memcmp(&ps, &ptr_live_seen[nt], sizeof ps)) (*mismatch)++;
+      ptr_toy_tick(&g);
+    }
+    cw_input_ticks_end();
+    raw.mouse_pressed = 0;
+    raw.touches[0].tapped = false;
+    raw.pads[0].pressed = 0;
+  }
+  if (record) cw_input_record_end();
+  *out = g;
+  *ticks = nt;
+  return cw_hash32(&g, sizeof g, CW_HASH32_INIT);
+}
+
+/* early (no gate switch): the channel off changes nothing; an old (v1) recording replays with the channel on */
+static void test_pointer_channel(void) {
+  ptr_toy a, b;
+  int ta, tb;
+  /* off: version 1, and the pointer is in neither hash */
+  ptr_run(true, NULL, 0, false, &a, &ta, NULL);
+  size_t len;
+  const uint8_t *r = cw_input_recording(&len);
+  CHECK(r && len > 5 && r[4] == 1);
+  uint32_t off_hash = cw_input_record_hash(), off_stream = cw_input_stream_hash();
+  /* the same run with every pointer event dropped hashes the same */
+  fresh();
+  cw_action_add("place", 0.5f);
+  cw_action_bind_text(0, "pad:south, key:space");
+  cw_input_record_begin();
+  cw_rng rng;
+  cw_rng_seed(&rng, 4242);
+  int nt = 0;
+  for (int f = 0; f < PTR_FRAMES; f++) { /* the same random stream, the pad alone reaching the module */
+    if (cw_rng_int(&rng, 0, 2) == 0) cw_rng_range(&rng, 0, 640), cw_rng_range(&rng, 0, 480);
+    if (cw_rng_int(&rng, 0, 9) == 0) cw_rng_int(&rng, 0, 1);
+    else cw_rng_int(&rng, 0, 7);
+    cw_rng_int(&rng, 0, 15);
+    if (cw_rng_int(&rng, 0, 40) == 0) cw_rng_range(&rng, 0, 640), cw_rng_range(&rng, 0, 480);
+    memset(&raw, 0, sizeof raw);
+    raw.pads[0].connected = raw.pads[1].connected = true;
+    raw.pads[0].buttons = cw_rng_int(&rng, 0, 30) == 0 ? 1u << CW_PAD_SOUTH : 0;
+    cw_input_frame_begin(&raw);
+    int ticks_now = f % 4 == 3 ? 0 : f % 5 == 4 ? 3 : 1;
+    for (int t = 0; t < ticks_now && nt < PTR_TICKS_MAX; t++, nt++) cw_input_tick_begin();
+    cw_input_ticks_end();
+  }
+  cw_input_record_end();
+  CHECK_EQ_INT(nt, ta);
+  CHECK(cw_input_record_hash() == off_hash);
+  CHECK(cw_input_stream_hash() == off_stream);
+  /* on, a hand-made version 1 recording (as v0.83 wrote them): jump pressed on tick 3, three idle ticks after */
+  static const uint8_t v1[] = { 'C', 'W', 'I', 'R', 1, 8, 1, 4, 'j', 'u', 'm', 'p', 2, 1, 0, 3, 0xff, 0x7f, 3, 0 };
+  fresh();
+  cw_action_add("jump", 0.5f);
+  cw_input_pointer_channel(true);
+  CHECK(cw_input_replay_begin(v1, sizeof v1));
+  int i = 0, pressed_at = -1, present = 0;
+  while (cw_input_replay_step()) {
+    if (pressed_at < 0 && cw_action_just_pressed(0, 0)) pressed_at = i; /* (the slot keeps its flags: the first tick) */
+    present += cw_input_pointer().present;
+    i++;
+  }
+  cw_input_set_context(CW_INPUT_FRAME);
+  CHECK_EQ_INT(i, 6);
+  CHECK_EQ_INT(pressed_at, 2);
+  CHECK_EQ_INT(present, 0);
+  /* a truncated version 2 recording is refused */
+  static const uint8_t bad2[] = { 'C', 'W', 'I', 'R', 2, 8, 1, 4, 'j', 'u', 'm', 'p', 1, 0, 1, 8, 5 };
+  CHECK(!cw_input_replay_begin(bad2, sizeof bad2));
+  (void)b, (void)tb;
+}
+
+/* late (the control CW_TEST_POINTER_UNRECORDED arrives at frame 2 in a cart): on, the pointer recorded and replayed
+ * tick for tick with nothing live, the toy's state and every hash the same */
+static void pointer_replay_late(void) {
+  ptr_toy live, again;
+  int tl, ta, mismatch = 0;
+  uint32_t live_h = ptr_run(true, NULL, 0, true, &live, &tl, NULL);
+  uint32_t rec_hash = cw_input_record_hash(), stream = cw_input_stream_hash();
+  size_t len;
+  const uint8_t *r = cw_input_recording(&len);
+  CHECK(r && r[4] == 2);
+  uint8_t *copy = cw_alloc(len, CW_MEM_GENERAL);
+  memcpy(copy, r, len);
+  int clicks = 0;
+  for (int c = 0; c < 64; c++) clicks += live.cell[c];
+  CHECK(clicks > 3 && live.releases > 3 && live.drag > 3); /* the pointer really played */
+  cw_info("pointer channel: %d ticks in %zu bytes, %d cells on, %d releases", tl, len, clicks, live.releases);
+  uint32_t again_h = ptr_run(false, copy, len, true, &again, &ta, &mismatch);
+  CHECK_EQ_INT(ta, tl);
+  CHECK_EQ_INT(mismatch, 0);
+  CHECK(again_h == live_h);
+  CHECK(cw_input_replay_hash() == rec_hash);
+  CHECK(cw_input_stream_hash() == stream);
+  /* a replay into a build with the channel off still feeds the pointer (the recording carries it) */
+  ptr_toy off;
+  int to, mm_off = 0;
+  CHECK(ptr_run(false, copy, len, false, &off, &to, &mm_off) == live_h);
+  CHECK_EQ_INT(mm_off, 0);
+  cw_free(copy);
+  FOLD(live_h);
+  FOLD(rec_hash);
+}
+
 void cw_test_late(void) {
   touch_cases();
+  pointer_replay_late();
   toy live, again, bare;
   uint32_t live_h = toy_run(true, NULL, 0, true, &live);
   uint32_t rec_hash = cw_input_record_hash(), stream = cw_input_stream_hash();
@@ -858,4 +1022,4 @@ static void test_aim(void) {
 
 CW_TEST_SUITE("input", { "tick_latch", test_tick_latch }, { "strength_vector", test_strength_and_vector },
               { "players", test_players }, { "text", test_text }, { "capture", test_capture },
-              { "touch_host", test_touch_host }, { "record_replay", test_record_replay }, { "set_actions", test_set_actions }, { "pad_routing", test_pad_routing }, { "aim", test_aim })
+              { "touch_host", test_touch_host }, { "record_replay", test_record_replay }, { "set_actions", test_set_actions }, { "pointer_channel", test_pointer_channel }, { "pad_routing", test_pad_routing }, { "aim", test_aim })

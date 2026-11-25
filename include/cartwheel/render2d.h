@@ -165,7 +165,8 @@ void cw_texture_destroy(cw_texture t);
  * .target) and then draw as a sprite. Content follows GL's orientation
  * (row 0 = bottom); the renderer flips it back when sampling, so a target
  * drawn as a sprite shows what was drawn into it upright, whether a 2D pass
- * or three.c filled it. */
+ * or three.c filled it. On a three.c material (a card face, a sign): cw_target_texture3d
+ * (cartwheel/render3d.h), which follows every 2D pass into the target. */
 typedef struct cw_target_desc {
   int width, height;
   cw_filter filter;

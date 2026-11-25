@@ -90,6 +90,29 @@ t3_renderer *cw_render3d_window_renderer(int w, int h);
  * then draws as a sprite the right way up, on GL and WebGPU. Size the renderer
  * to the target first (t3_renderer_set_size) and back to the window after. */
 void cw_render3d_texture_target(t3_renderer *r, cw_texture target);
+/* A 2D render target (cw_target_create) as a three.c texture, for any material's map (t3_material_set_texture with
+ * T3_MAP, T3_EMISSIVE_MAP, ...): card faces, signs, a score board drawn with the 2D renderer and worn by any number of
+ * meshes, no SubViewport per face.
+ *
+ *   cw_texture face = cw_target_create(&(cw_target_desc){ .width = 256, .height = 384, .filter = CW_FILTER_LINEAR });
+ *   cw_r2d_begin(&(cw_r2d_pass_desc){ .target = face, .clear = true, .clear_color = CW_WHITE });
+ *   ... the card's art, text ...
+ *   cw_r2d_end();                                    // the 3D texture follows (below)
+ *   t3_material_set_texture(card_mat, T3_MAP, cw_target_texture3d(face));
+ *
+ * The texture is a linear-light copy of the target (the 2D renderer stores display-encoded, premultiplied colour;
+ * three.c samples an embedder's texture as it is): alpha kept and divided out of the colour, rows the way three.c
+ * reads a texture's v, so the picture lies upright on a plane or a box face whichever renderer drew it. The copy is
+ * refreshed at the end of every 2D pass into the target (cw_r2d_end) and by cw_target_texture3d_refresh (after three.c
+ * or a pipeline drew into it); a pass in a scene app's render shows in 3D from the next frame, a pass in update or
+ * init the same frame. Owned by the target: it follows cw_target_resize (from the next refresh) and goes with
+ * cw_texture_destroy, so a material must not outlive it. NULL (logged) for a handle that is not a live target.
+ * Costs: one copy at the target's size (RGBA16F where the host renders half floats, else RGBA8) and one fullscreen
+ * pass per refresh; no program state of its own (a material wearing it draws as with any map: "+map"). Debug fields render.target_texture3d.refreshes and
+ * render.target_texture3d.targets. */
+t3_texture *cw_target_texture3d(cw_texture target);
+/* Refresh the 3D copy of a target that has one (after three.c or a pipeline drew into it); nothing for another. */
+void cw_target_texture3d_refresh(cw_texture target);
 /* Before each t3_renderer_render of a cw_render3d_window_renderer that draws
  * to the window: point it at this frame's window (the frame texture on
  * WebGPU; nothing to do on GL, where it draws to the default framebuffer). */

@@ -344,6 +344,7 @@ cw_add_app(split_array SOURCES split_array/main.c ASSETS ${CMAKE_CURRENT_SOURCE_
 # a board game's table: 3D picking under a perspective, an orthographic and a split-screen camera (cartwheel/pick3d.h), two
 # players' cursors hopping between the squares (cursor.h), squares and cards laid apart off the board's plane (coplanar.h)
 cw_add_app(board_pick SOURCES board_pick/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/board_pick/assets)
+cw_add_app(board_kit SOURCES board_kit/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/board_kit/assets)
 cw_add_app(split_views SOURCES split_views/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/split_views/assets)
 # clustered lighting: a night street with 214 clustered lights and shadowed floodlights (cartwheel/lighting.h).
 cw_add_app(night_street SOURCES night_street/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/night_street/assets)

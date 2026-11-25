@@ -110,6 +110,11 @@ static struct {
   const char *pause_label[2]; /* the game's pause items, read from the desc when the pause menu opens */
   int pause_index[2];  /* each shown item's index in cw_shell_desc.pause_items */
   int n_pause;         /* how many are shown (0..2), between Resume and Settings */
+  const char *title_label[2]; /* the game's title items, read from the desc as the title builds its list */
+  int title_index[2];  /* each shown item's index in cw_shell_desc.title_items */
+  int n_title;         /* how many are shown (0..2), between Play and Settings */
+  int page;            /* the title item whose page shows (its index in title_items), -1 none (debug field shell.page) */
+  int page_slot;       /* its row on the title (1 .. n_title) */
   cw_shell_setting set[CW_SHELL_SETTINGS_MAX]; /* the game's Settings rows (copied from the desc, or the setter) */
   int n_set, dbg_settings;
 } S;
@@ -143,6 +148,7 @@ static void go(cw_shell_screen to) {
       }
   }
   if (to != CW_SHELL_JOIN) S.mid_join = false;
+  if (to != CW_SHELL_PAGE) S.page = -1;
   if (to != CW_SHELL_SETTINGS) cw_quality_menu_close();
   S.dbg_screen = (int)to;
   S.dbg_hud = to == CW_SHELL_PLAY;
@@ -444,6 +450,8 @@ void cw_shell_init(const cw_shell_desc *d) {
   cw_debug_field("shell.turn", &S.turn, CW_DBG_I32, 1);
   cw_debug_field("shell.join_kind", S.dbg_join_kind, CW_DBG_I32, SEATS);
   cw_debug_field("shell.join_cursor", &S.join_cursor, CW_DBG_I32, 1);
+  S.page = -1;
+  cw_debug_field("shell.page", &S.page, CW_DBG_I32, 1);
   S.inited = true;
   S.screen = S.d.loading ? CW_SHELL_LOADING : CW_SHELL_TITLE;
   S.dbg_screen = (int)S.screen;
@@ -648,6 +656,11 @@ void cw_shell_set_two_colour(bool on) {
 }
 bool cw_shell_two_colour(void) { return S.d.two_colour; }
 
+void cw_shell_set_title_items(const char *const items[2]) {
+  for (int i = 0; i < 2; i++) S.d.title_items[i] = items ? items[i] : NULL;
+}
+int cw_shell_page(void) { return S.inited && S.screen == CW_SHELL_PAGE ? S.page : -1; }
+
 void cw_shell_set_pause_items(const char *const items[2]) {
   for (int i = 0; i < 2; i++) S.d.pause_items[i] = items ? items[i] : NULL;
 }
@@ -690,9 +703,20 @@ static item items[MAX_ITEMS];
 static int n_items;
 static cw_rect item_rects[MAX_ITEMS];
 
+/* the game's title items as the desc names them now (cw_shell_set_title_items changes them) */
+static void title_game_items(void) {
+  S.n_title = 0;
+  for (int i = 0; i < 2; i++)
+    if (S.d.title_items[i] && S.d.title_items[i][0]) {
+      S.title_label[S.n_title] = S.d.title_items[i];
+      S.title_index[S.n_title++] = i;
+    }
+}
 static void title_items(void) {
+  title_game_items();
   n_items = 0;
   items[n_items++] = (item){ "Play", "" };
+  for (int i = 0; i < S.n_title; i++) items[n_items++] = (item){ S.title_label[i], "" };
   items[n_items++] = (item){ "Settings", "" };
 #if !defined(__wasi__) && !defined(__ANDROID__)
   items[n_items++] = (item){ "Quit", "" };
@@ -799,8 +823,16 @@ static void accept(int i) {
   S.item = i;
   switch (S.screen) {
   case CW_SHELL_TITLE:
+    /* Play, the game's items (1 .. n_title), Settings, Quit */
+    title_game_items();
     sound(CW_SHELL_SND_SELECT);
-    if (i == 0) {
+    if (i >= 1 && i <= S.n_title) { /* the game's page */
+      int index = S.title_index[i - 1];
+      go(CW_SHELL_PAGE);
+      S.page = index;
+      S.page_slot = i;
+      if (S.d.title_item) S.d.title_item(index, S.d.user);
+    } else if (i == 0) {
       if (S.d.max_players > 1) {
         join_fresh();
         go(CW_SHELL_JOIN);
@@ -808,7 +840,7 @@ static void accept(int i) {
         assign_default(1);
         begin_starting(1);
       }
-    } else if (i == 1) {
+    } else if (i == S.n_title + 1) {
       S.settings_from = CW_SHELL_TITLE;
       go(CW_SHELL_SETTINGS);
     } else cw_quit();
@@ -833,7 +865,8 @@ static void accept(int i) {
       sound(CW_SHELL_SND_BACK);
       cw_shell_screen back = S.settings_from;
       go(back);
-      S.item = back == CW_SHELL_PAUSE ? S.n_pause + 1 : 1; /* Settings, in the title and pause menus */
+      if (back == CW_SHELL_TITLE) title_game_items();
+      S.item = back == CW_SHELL_PAUSE ? S.n_pause + 1 : S.n_title + 1; /* Settings, in the title and pause menus */
     } else if (i == SET_CONTROLS) {
       sound(CW_SHELL_SND_SELECT); /* the list shows beside the menu while Controls is highlighted */
     } else settings_change(0);
@@ -1051,6 +1084,10 @@ bool cw_shell_update(void) {
 }
 
 static void menu_tick(void) {
+  if (S.screen != CW_SHELL_PLAY && S.d.menu_update) { /* the game's tick under the menus (a test's start, a page's input) */
+    S.d.menu_update(S.screen, S.d.user);
+    if (S.screen == CW_SHELL_PLAY) return; /* it started a match: the menus have nothing to do this tick */
+  }
   if (S.starting) { /* the answer to the press is on screen (presented when its frame ended): now the game's start */
     if (S.starting_shown || ++S.starting_ticks > STARTING_MAX_TICKS) begin_match(S.starting);
     return;
@@ -1110,6 +1147,17 @@ static void menu_tick(void) {
     return;
   }
   case CW_SHELL_JOIN: join_update(); return;
+  case CW_SHELL_PAGE: { /* a title item's page: Back, accept or a tap goes back to the title, on the item */
+    float tx, ty;
+    if (any_pressed(A_BACK) || any_pressed(A_ACCEPT) || cw__input_tap(&tx, &ty)) {
+      int slot = S.page_slot;
+      sound(CW_SHELL_SND_BACK);
+      go(CW_SHELL_TITLE);
+      S.item = slot;
+    }
+    S.dbg_item = S.item;
+    return;
+  }
   default: break;
   }
   if (S.screen == CW_SHELL_SETTINGS && cw_quality_menu_is_open()) { /* the graphics page */
@@ -1336,6 +1384,7 @@ static void draw_controls(float x, float y, float right, float bottom, float siz
 
 static const char *const HINT_TITLE = "{ui_up|ui_down} choose    {ui_accept} select";
 static const char *const HINT_PAUSE = "{ui_up|ui_down} choose    {ui_accept} select    {ui_back} resume";
+static const char *const HINT_PAGE = "{ui_back} back";
 static const char *const HINT_SETTINGS = "{ui_up|ui_down} choose    {ui_left|ui_right} change    {ui_back} back";
 
 /* a seat's box on the join screen: a quarter of the canvas wide whatever the seat count, the row centred under the
@@ -1399,6 +1448,17 @@ void cw_shell_draw(void) {
     float hs = u * 0.75f, top = hint_top(HINT_TITLE, cx, foot, hs);
     draw_menu(cx, fmaxf(sz.y * 0.5f, y + u * 0.4f), top - drawn(hs) * 0.4f, u * 1.1f);
     hint(HINT_TITLE, cx, foot, hs);
+    break;
+  }
+  case CW_SHELL_PAGE: {
+    if (S.d.draw_page) S.d.draw_page(S.page, sz, S.d.user);
+    else {
+      const char *label = S.page >= 0 && S.page < 2 && S.d.title_items[S.page] ? S.d.title_items[S.page] : "";
+      text(label, cx, sz.y * 0.22f, u * 1.8f, fg(1), 1);
+    }
+    hint(HINT_PAGE, cx, foot, u * 0.75f);
+    /* a touch screen has no buttons to name */
+    if (!hints_wanted()) text("tap to go back", cx, foot - drawn(u * 0.9f), u * 0.9f, fg(0.8f), 1);
     break;
   }
   case CW_SHELL_PAUSE: {

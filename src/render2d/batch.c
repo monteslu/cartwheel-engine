@@ -945,7 +945,17 @@ static void post_to(GLuint canvas) {
   base_state();
 }
 
+/* render3d's cw_target_texture3d (src/render/target_texture.c): told after each pass into a target, to refresh the
+ * target's 3D copy; NULL until a target has one */
+void (*cw__r2d_target_drawn_hook)(cw_texture t);
+static void r2d_end_pass(void);
 void cw_r2d_end(void) {
+  cw_texture target = R.pass.target;
+  bool open = R.inited && R.in_pass;
+  r2d_end_pass();
+  if (open && !CW_HANDLE_IS_NULL(target) && cw__r2d_target_drawn_hook) cw__r2d_target_drawn_hook(target);
+}
+static void r2d_end_pass(void) {
   CW_PROFILE_SCOPE("r2d.flush");
   if (!R.inited) return;
   CW_ASSERT(R.in_pass, "cw_r2d_end without cw_r2d_begin");

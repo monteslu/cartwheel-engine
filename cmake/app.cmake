@@ -266,6 +266,19 @@ function(cw_add_app name)
     endif()
     file(GENERATE OUTPUT ${CMAKE_BINARY_DIR}/apps/${name}.json CONTENT
 "{\"name\": \"${name}\", \"binary\": \"$<TARGET_FILE:${name}>\", \"pak\": \"${_pak}\", \"assets\": \"${A_ASSETS}\", \"manifest\": \"${A_PACK}\", \"programs\": [${_progs}], \"runtime\": [${_rtj}], \"dir\": \"${CMAKE_CURRENT_SOURCE_DIR}\"}\n")
+  else()
+    # a cart's app list entry (tools/programs.mjs --carts reads a project's tables from it when the project has no
+    # native build): the cart's wasm, its program tables and its source directory
+    get_target_property(_progs ${name} CW_PROGRAMS)
+    if(NOT _progs)
+      set(_progs "")
+    endif()
+    list(JOIN _progs "\", \"" _progs)
+    if(_progs)
+      set(_progs "\"${_progs}\"")
+    endif()
+    file(GENERATE OUTPUT ${CMAKE_BINARY_DIR}/apps/${name}.json CONTENT
+"{\"name\": \"${name}\", \"binary\": \"$<TARGET_FILE:${name}>\", \"programs\": [${_progs}], \"dir\": \"${CMAKE_CURRENT_SOURCE_DIR}\", \"cart\": true}\n")
   endif()
   if(CW_CART)
     set_property(GLOBAL APPEND PROPERTY CW_CARTS ${name})

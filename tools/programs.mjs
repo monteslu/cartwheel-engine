@@ -34,10 +34,15 @@
 //   preset and from each back to High: what a game built on one preset draws on another (a player's settings
 //   change, or Auto stepping down in play) asks for states neither preset asks for from the start (High's
 //   lights on Very Low's shadows, say), and those draws vanished mid-game. --no-switch leaves these runs out.
-//   --scenes NAME=a,b,c   runs each app once per value with environment NAME set to it (on GL and on WebGPU), for a
-//       game that picks its scene from the environment or runs a different scene per level: the table gets the
-//       union of every scene's states (a runtime-created light or particle needs its state in the table, and a
-//       scene the run never visits is a skipped draw later)
+//   --scenes NAME=a,b,c   runs each app once per value with environment NAME set to it (on GL and on WebGPU; with
+//       --carts each cart run too), for a game that picks its scene from the environment or runs a different scene
+//       per level: the table gets the union of every scene's states (a runtime-created light or particle needs its
+//       state in the table, and a scene the run never visits is a skipped draw later). A list with a semicolon splits
+//       there instead, so values keep their commas ('SEATS=-1,0,1;-2,-2'); --scene NAME=value (repeatable) is one run
+//       with the whole value.
+//   --carts finds the project from the working directory (the nearest directory with build/cart-wgpu/carts) when
+//       neither CW_PROJECT_ROOT nor --build names it, and reads its app list from its build/native, else its
+//       build/cart-wgpu: a game's checkout runs it with no --build.
 //   node tools/programs.mjs ... --dry
 //       only reports each app's missing states (out/programs-survey.json)
 //   node tools/programs.mjs --projects [project dir ...]
@@ -85,18 +90,18 @@ import { testEnv, wgpuPin } from './lib/wgpu-pin.mjs';
 import { checkWgsl } from './lib/wgsl-check.mjs';
 import { tableStamp } from './lib/program-sources.mjs';
 import { closure, featureOrder } from './lib/program-closure.mjs';
+import { sceneEnvs, sceneLabel, surveyTree } from './lib/programs-args.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
 const one = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
 const all = (k) => argv.flatMap((a, i) => (a === k ? [argv[i + 1]] : []));
-const VALUED = new Set(['--scenes', '--presets', '--frames', '--logs', '--build', '--gates-file', '--table', '--missing', '--extend']);
+const VALUED = new Set(['--scenes', '--scene', '--presets', '--frames', '--logs', '--build', '--gates-file', '--table', '--missing', '--extend']);
 const names = argv.filter((a, i) => !a.startsWith('--') && !VALUED.has(argv[i - 1]));
-const BUILD = resolve(one('--build') || join(ROOT, 'build', 'native'));
 // CW_PROJECT_ROOT (as tools/run-cart.mjs reads it): the tree whose carts, gates, inputs and assets these are. Without it,
-// --build <project>/build/native names the project: from an SDK, ROOT holds the engine and none of the game's files
-const PROJ = process.env.CW_PROJECT_ROOT ? resolve(process.env.CW_PROJECT_ROOT)
-  : one('--build') && basename(BUILD) === 'native' && basename(dirname(BUILD)) === 'build' ? dirname(dirname(BUILD)) : ROOT;
+// --build <project>/build/native names the project: from an SDK, ROOT holds the engine and none of the game's files. A
+// --carts survey with neither finds the project from the working directory (tools/lib/programs-args.mjs surveyTree)
+const { proj: PROJ, build: BUILD } = surveyTree({ root: ROOT, cwd: process.cwd(), env: process.env, build: one('--build'), carts: argv.includes('--carts') });
 // --gates-file a.json,b.json (or CW_GATES_FILE): gate files in the project's tests/, as tests/gate.mjs reads them
 const gateFile = () => (one('--gates-file') || process.env.CW_GATES_FILE || 'gates.json').split(',')
   .flatMap((f) => JSON.parse(readFileSync(join(PROJ, 'tests', f.trim()), 'utf8')));
@@ -515,6 +520,7 @@ const cartSurvey = (replyFile) => {
   const dropped = typeof rep.dropped_values === 'string' ? rep.dropped_values.split('\n').map((l) => l.trim()).filter(Boolean) : [];
   return { states: rep.missing_states.split('\n').map((l) => l.trim()).filter(Boolean), dropped, why: null };
 };
+const cartScenes = sceneEnvs(argv);
 if (CARTS && !argv.includes('--no-run')) {
   rmSync(runDir, { recursive: true, force: true });
   mkdirSync(runDir, { recursive: true });
@@ -532,7 +538,7 @@ if (CARTS && !argv.includes('--no-run')) {
   const gates = argv.includes('--gates') ? gateFile().filter((g) => g.app && !g.script) : [];
   for (const app of todo) {
     // every preset but the default High, switched to at frame 2 (cartwheel/quality.h: each asks for states of its own)
-    const runs = [{ tag: app, args: ['--frames', frames] }, ...PRESETS.filter((p) => p !== 'high').map((p) => ({ tag: `${app}.${p}`, args: ['--frames', frames, '--start-cmds', `quality ${p}`] }))];
+    const runs0 = [{ tag: app, args: ['--frames', frames] }, ...PRESETS.filter((p) => p !== 'high').map((p) => ({ tag: `${app}.${p}`, args: ['--frames', frames, '--start-cmds', `quality ${p}`] }))];
     // the preset switched in play, both ways (the cart starts on High)
     for (const [from, to] of switches(PRESETS))
       runs.push({ tag: `${app}.${from}-to-${to}`, args: ['--frames', frames, '--start-cmds', [...(from !== 'high' ? [`quality ${from}`] : []), `@${switchAt} quality ${to}`].join(';')] });
@@ -543,6 +549,9 @@ if (CARTS && !argv.includes('--no-run')) {
     runs.push({ tag: `${app}.player`, args: ['--frames', frames, '--warmup-spread'] });
     for (const g of gates.filter((x) => x.app === app))
       runs.push({ tag: `${g.name}.player`, args: ['--frames', String(g.frames), '--warmup-spread', ...(g.input ? ['--input', join(PROJ, 'tests', g.input)] : [])] });
+    // every run once per scene (--scenes / --scene): the cart reads the variable through its env request (run-cart --env)
+    const runs = cartScenes.flatMap((sc, k) => runs0.map((r) => (Object.keys(sc).length
+      ? { tag: `${r.tag}.scene${k}`, args: [...r.args, '--env', JSON.stringify(sc)], label: sceneLabel(sc) } : r)));
     const seen = new Set();
     let surveyed = 0;
     for (const run of runs) for (const [leg, legArgs] of legs) {
@@ -551,7 +560,7 @@ if (CARTS && !argv.includes('--no-run')) {
         { encoding: 'utf8', timeout: 600000, env: testEnv({ ...process.env }) });
       const got = cartSurvey(stateFile);
       const why = r.status !== 0 ? `run failed (${r.signal || 'exit ' + r.status}): ${(r.stderr || r.stdout || '').trim().split('\n').slice(-1)[0]}` : got.why;
-      if (why) { failed.push(`${run.tag} on the ${leg} host: ${why}`); console.log(`cart ${run.tag} (${leg}): FAILED: ${why}`); continue; }
+      if (why) { failed.push(`${run.tag}${run.label ? ' (' + run.label + ')' : ''} on the ${leg} host: ${why}`); console.log(`cart ${run.tag} (${leg}): FAILED: ${why}`); continue; }
       surveyed++;
       for (const st of got.states) seen.add(st);
       for (const d of got.dropped) droppedSeen.add(`${app}: ${d}`);
@@ -573,23 +582,21 @@ if (!CARTS && !argv.includes('--no-run')) {
   const failed = []; // every run that surveyed nothing: as --carts, a false all-clear otherwise
   const legs = [['gl', {}]];
   if (wgpu && !argv.includes('--gl-only')) legs.push(['webgpu', { CW_GPU: 'webgpu', ...wgpuPin().env }]);
-  const sc = one('--scenes');
-  if (sc && !/^[A-Za-z_][A-Za-z0-9_]*=[^,]+(,[^,]+)*$/.test(sc)) throw new Error('--scenes wants NAME=a,b,c');
-  const sceneEnvs = sc ? sc.slice(sc.indexOf('=') + 1).split(',').map((v) => ({ [sc.slice(0, sc.indexOf('='))]: v })) : [{}];
+  const scenes = sceneEnvs(argv); // --scenes / --scene (tools/lib/programs-args.mjs): one run per value, commas kept with ';' or --scene
   // every graphics preset (cartwheel/quality.h): each asks for its own states (hard filtering, one cascade, no bloom)
   const presets = (one('--presets') || PRESETS.join(',')).split(',');
   for (const a of list) {
     for (const [leg, extra] of legs.filter(([l]) => l === 'gl' || a.name !== 'unit_pipeline')) {
       // each preset from the start, then each switch in play (CW_START_CMDS "@N quality <to>", src/platform/native.c)
       const runs = [...presets.map((p) => [p, null]), ...switches(presets)];
-      for (const scene of sceneEnvs) for (const [preset, to] of runs) {
+      for (const scene of scenes) for (const [preset, to] of runs) {
         const r = spawnSync(a.binary, [], {
           cwd: dirname(a.binary), encoding: 'utf8', timeout: 180000,
           env: testEnv({ ...process.env, ...extra, ...scene, CW_FRAMES: frames, SDL_AUDIODRIVER: 'dummy', CW_PROGRAMS_LOG_DIR: runDir, CW_QUALITY: preset,
             ...(to ? { CW_START_CMDS: `@${switchAt} quality ${to}` } : {}) }),
         });
         if (r.status !== 0) {
-          const run = `${a.name} (${leg} ${preset}${to ? ' to ' + to : ''}${sc ? ' ' + Object.values(scene)[0] : ''}): ${r.signal || 'exit ' + r.status}`;
+          const run = `${a.name} (${leg} ${preset}${to ? ' to ' + to : ''}${Object.keys(scene).length ? ' ' + sceneLabel(scene) : ''}): ${r.signal || 'exit ' + r.status}`;
           failed.push(run);
           console.log(run);
         }

@@ -83,7 +83,7 @@ In the match a CPU seat is a player like the others: it counts in `cw_shell_play
 
 @include samples/hex_board/main.c#start
 
-[cw_shell_start_seats](api:cw_shell_start_seats) starts a match with seats set (people on pads in seat order, `CW_SHELL_SEAT_HOT` hot seats, CPUs at their levels), for an autopilot build or a test; `hex_board` takes `HEX_BOARD_SEATS=-1,0,1,2`. Debug fields: `shell.seat_cpu` (eight, -1 or the level), `shell.join_kind` (the join screen's: 0 none, 1 a hot seat, 2 + level a CPU) and `shell.join_cursor`. The gates are `shell-cpu-seats` (the pad alone sets two CPUs, plays, quits and finds them saved on the join screen; its control presses no up) and `shell-cpu-seats-touch` (taps alone; its control taps no seat).
+[cw_shell_start_seats](api:cw_shell_start_seats) starts a match with seats set (people on pads in seat order, `CW_SHELL_SEAT_HOT` hot seats, CPUs at their levels), for an autopilot build or a test; `hex_board` takes `HEX_BOARD_SEATS=-1,0,1,2`, read in `menu_update` (the pause rule, below). Debug fields: `shell.seat_cpu` (eight, -1 or the level), `shell.join_kind` (the join screen's: 0 none, 1 a hot seat, 2 + level a CPU) and `shell.join_cursor`. The gates are `shell-cpu-seats` (the pad alone sets two CPUs, plays, quits and finds them saved on the join screen; its control presses no up) and `shell-cpu-seats-touch` (taps alone; its control taps no seat).
 
 **Hot seats.** A turn-based game for more people than pads sets `hot_seats = true`: up to `CW_SHELL_MAX_SEATS` (eight) seats, each a person on a pad of their own, a hot seat or (with `cpu_seats`) a CPU. On the join screen up and down step the framed seat through empty, a hot seat ("pass the pad"), then the CPU levels; `seat_names` and `seat_colors` in `cw_shell_desc` name and colour each seat (Red, Blue, ...), and more than four seats draw in two rows. Start plays without seating the pad that pressed it when hot seats are set, since the free pads drive them. In the match the game says whose turn it is with [cw_shell_set_turn](api:cw_shell_set_turn) (in `start` and whenever the turn passes): the pads no seat holds, and the keyboard, mouse and touch unless a seat holds them, drive that hot seat ([cw_input_assign_pads](api:cw_input_assign_pads)) and no other hot seat reads anything, so one pad passed round plays all eight and the rules still read each seat with `cw_action_*`. A button still held when the turn passes is not the next seat's press. On a CPU's turn or a pad seat's turn the hot seats read nothing; Start on a free pad opens the pause menu on any turn, and under the menus the free pads drive them. [cw_shell_seat_hot](api:cw_shell_seat_hot) says which seats are hot. A match of more than four seats is one shared view. The wasmcart pad interface is unchanged: these are seats over the same four pads. Debug fields `shell.seat_hot` and `shell.turn`. `hex_board` plays eight hot seats with `HEX_BOARD_SEATS=-2,-2,-2,-2,-2,-2,-2,-2`; the gates are `hex-board-hotseat` (sixteen presses on one pad place two stones for every seat in turn, no seat hears a press out of turn, and the match replays exactly; control: `CW_TEST_TURN_WRONG_SEAT` hands the pad to the wrong seat) and `shell-hot-seats` (eight seats set up from one pad).
 
@@ -127,6 +127,19 @@ cw_shell_init(&(cw_shell_desc){ .title = "My Game", .start = start,
 
 The shell reads the labels when the pause menu opens. `cw_shell_set_pause_items` changes them (or adds or removes one) from the next pause, say a "Restart level" offered only inside a level; a label can also point at a buffer of the game's whose text it rewrites between pauses. The strings must stay valid while the menu is open. The `shell_pause` sample has two items, and renames one each time it is chosen; gates `shell-pause-items`, `shell-pause-items-wired`, `shell-pause-leak`, `shell-pause-none` and `shell-pause-touch` check the order, the index, the return to play, that the choosing press never reaches the game, that a game without items keeps the three-item menu, and touch.
 
+The title takes items of the game's own the same way: up to two in `title_items` (Credits, How to play), between Play and Settings, drawn, highlighted, tapped and clicked like the shell's. Choosing one opens a page of the game's: the screen is `CW_SHELL_PAGE` (`cw_shell_page()` says which item, the debug field `shell.page` too), the shell calls `title_item(index, user)`, then each frame draws `draw_background` (or its dark panel), the game's `draw_page(index, canvas, user)` and a hint to go back. Back, accept or a tap anywhere goes back to the title with the item still selected. A page that wants more than one view reads `ui_left` and `ui_right`, which the shell leaves alone, in `menu_update` (below). With no `draw_page` the page shows the item's label. `cw_shell_set_title_items` changes the items from the next frame the title draws. A game that names none keeps Play, Settings, Quit, the same pixels as before.
+
+```c
+static void draw_page(int index, cw_vec2 canvas, void *user) {
+  cw_r2d_text(font, index == 0 ? "Credits" : "How to play", cw_v2(canvas.x * 0.5f, canvas.y * 0.2f),
+              &(cw_text_style){ .size = canvas.y * 0.08f, .color = CW_WHITE, .align = CW_ALIGN_CENTER });
+}
+cw_shell_init(&(cw_shell_desc){ .title = "My Game", .start = start,
+                                .title_items = { "Credits", "How to play" }, .draw_page = draw_page });
+```
+
+The `board_kit` sample has both items; gate `shell-title-items` opens Credits from the pad and comes back (its control sets no items, so the same presses open Settings).
+
 A game can add rows of its own to the Settings screen, such as a visual style, hit sounds or a difficulty: up to `CW_SHELL_SETTINGS_MAX` (eight) `cw_shell_setting` rows in `settings_items` of `cw_shell_desc`, with their count in `settings_item_count`. Each row has a `label`, the `choices` it shows (`count` of them), `value` (a pointer to the game's own int, the chosen index; what it holds at `cw_shell_init` is the default) and a `key` it is saved under. The rows show after the shell's own (after Controls, before Back), on the page opened from the title and from the pause menu, drawn, highlighted, scrolled and sized with the text like the shell's rows, under the same hint line. They change like the shell's Music, Text size and Text background rows: left and right step the choice and stop at the ends, accept (South, Enter, a tap or a click on the row) steps it forward and goes round. Each change sets `*value` and then calls `settings_changed(index, value, user)` with the row's index in `settings_items`; a step at an end that changes nothing calls nothing.
 
 ```c
@@ -155,11 +168,28 @@ The shell copies the rows at init, so the strings and the ints must outlive it. 
 
 The game's HUD goes away under the shell's menus: `cw_shell_hud_shown()` is true only in play, and false under the pause menu, the settings opened from it, the join screen opened during play and on the title and loading screens. The menus are drawn over the game's frame and dim it only lightly, so a HUD left on screen sits under the menu's lines, and at a large text size (150% and 200%) they overlap. Keep drawing the world and the views; leave out the HUD, the hint lines and the banners.
 
-In a scene app (`cw_scene_app`) the tree is paused outside play, so its
-nodes hold still under the menus, and the menus tick from a hook of the
-tree's own. Menus run on the fixed tick from the input snapshot, so a
-replayed input script drives them like gameplay; an autopilot build or a
-test starts a match directly with `cw_shell_start`.
+The pause rule: in a scene app (`cw_scene_app`) the tree is paused on every
+screen but play (loading, title, join, a title page, pause, settings and the
+"Starting..." answer), so its nodes hold still under the menus. A paused
+tree runs no process or physics of its nodes (but those whose pause mode
+runs while paused) and does not call the app's `fixed_update`: in a scene
+app, code in `fixed_update` runs only in play. The menus tick from a hook
+of the tree's own instead. Anything that must run while a menu shows goes in
+`cw_shell_desc.menu_update`, which the shell calls on every tick the menus
+own, in a scene app and a plain app alike, with the screen showing. Above
+all that is a test's or an autopilot's start: `cw_shell_start` or
+`cw_shell_start_seats` from a `cw_test_env` switch, which in a scene
+app's `fixed_update` would wait at the title forever. The match then
+starts on that tick and gameplay runs from it on. A plain app (no scene
+tree) keeps calling its `fixed_update` on every screen, where
+`cw_shell_update` returns false while a menu owns the tick.
+
+@include samples/board_kit/main.c#menu_update
+
+Menus run on the fixed tick from the input snapshot, so a replayed input
+script drives them like gameplay. Gate `board-kit-test-start` starts
+`board_kit` (a scene app) from `menu_update`; its control makes the same
+start from `fixed_update`, and the match never starts.
 
 [cartwheel-starter](https://github.com/monteslu/cartwheel-starter) is a
 complete small game on the shell.

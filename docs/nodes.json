@@ -476,6 +476,16 @@
      "doc": "Emitted light colour."
     },
     {
+     "name": "opacity",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 1,
+     "doc": "1 opaque; below 1 see-through (a ghost preview of a move): the material turns transparent at this opacity, one program state per material state drawn so (\"+trans\"). A mesh resource's or a procedural mesh's materials are cloned for the node, times their own opacity; primitives with the same look share one. Leaves static batches; set cast_shadow false for no shadow."
+    },
+    {
      "name": "shading",
      "type": "enum",
      "default": "STANDARD",

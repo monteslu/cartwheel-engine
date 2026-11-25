@@ -255,10 +255,87 @@ static void test_hot_seats(void) {
   cw_shell_to_title();
 }
 
+/* Title items and menu_update, driven tick by tick with a pad (a plain app: cw_shell_update runs the menus): down and
+ * South open the first item's page (title_item, CW_SHELL_PAGE, cw_shell_page, menu_update told the screen), East goes
+ * back to the title, the second row past the items is Settings, no items leave Play and Settings, and a start made in
+ * menu_update begins play on that tick. */
+static int mu_calls, mu_screen, ti_calls, ti_index;
+static bool mu_start;
+static void title_mu(cw_shell_screen screen, void *user) {
+  (void)user;
+  mu_calls++;
+  mu_screen = (int)screen;
+  if (mu_start && screen == CW_SHELL_TITLE) cw_shell_start(1);
+}
+static void title_ti(int index, void *user) {
+  (void)user;
+  ti_calls++;
+  ti_index = index;
+}
+static cw_raw_input sraw;
+static bool shell_tick(uint32_t buttons) {
+  sraw.pads[0].connected = true;
+  sraw.pads[0].pressed = buttons & ~sraw.pads[0].buttons;
+  sraw.pads[0].buttons = buttons;
+  cw_input_frame_begin(&sraw);
+  cw_input_tick_begin();
+  bool play = cw_shell_update();
+  cw_input_ticks_end();
+  return play;
+}
+static void press(uint32_t b) {
+  shell_tick(b);
+  shell_tick(0);
+}
+static void test_title_items(void) {
+  mu_calls = ti_calls = 0, ti_index = -1, mu_start = false;
+  memset(&sraw, 0, sizeof sraw);
+  cw_shell_init(&(cw_shell_desc){ .title = "t", .title_items = { "Credits", "How to play" }, .title_item = title_ti,
+                                  .menu_update = title_mu });
+  CHECK(!shell_tick(0));
+  CHECK(mu_calls == 1 && mu_screen == CW_SHELL_TITLE);
+  press(1u << CW_PAD_DOWN);
+  press(1u << CW_PAD_SOUTH);
+  CHECK_EQ_INT(cw_shell_screen_now(), CW_SHELL_PAGE);
+  CHECK_EQ_INT(ti_calls, 1);
+  CHECK_EQ_INT(ti_index, 0);
+  CHECK_EQ_INT(cw_shell_page(), 0);
+  CHECK_EQ_INT(mu_screen, CW_SHELL_PAGE);
+  CHECK(!cw_shell_hud_shown());
+  press(1u << CW_PAD_EAST);
+  CHECK_EQ_INT(cw_shell_screen_now(), CW_SHELL_TITLE);
+  CHECK_EQ_INT(cw_shell_page(), -1);
+  press(1u << CW_PAD_DOWN); /* How to play */
+  press(1u << CW_PAD_SOUTH);
+  CHECK_EQ_INT(cw_shell_page(), 1);
+  press(1u << CW_PAD_SOUTH); /* accept goes back too */
+  CHECK_EQ_INT(cw_shell_screen_now(), CW_SHELL_TITLE);
+  press(1u << CW_PAD_DOWN); /* Settings, after the two items */
+  press(1u << CW_PAD_SOUTH);
+  CHECK_EQ_INT(cw_shell_screen_now(), CW_SHELL_SETTINGS);
+  cw_shell_to_title();
+  cw_shell_set_title_items(NULL); /* none: the second row is Settings again */
+  press(1u << CW_PAD_DOWN);
+  press(1u << CW_PAD_SOUTH);
+  CHECK_EQ_INT(cw_shell_screen_now(), CW_SHELL_SETTINGS);
+  CHECK_EQ_INT(ti_calls, 2);
+  cw_shell_to_title();
+  mu_start = true; /* a start in menu_update: gameplay runs on that tick */
+  CHECK(shell_tick(0));
+  CHECK_EQ_INT(cw_shell_screen_now(), CW_SHELL_PLAY);
+  int calls = mu_calls;
+  shell_tick(0);
+  CHECK_EQ_INT(mu_calls, calls); /* not called in play */
+  cw_shell_to_title();
+  uint32_t fold = (uint32_t)(ti_calls * 16 + ti_index);
+  FOLD(fold);
+}
+
 /* reads the gate's switches (CW_TEST_NO_SHARED, CW_TEST_OLD_SEATS): runs at frame 2, when every host has them */
 void cw_test_late(void) {
   test_shared_and_split();
   test_join_seats();
 }
 CW_TEST_SUITE("shell", { "one player", test_one_player },
-              { "screen shake setting", test_screen_shake }, { "text settings", test_text_settings }, { "cpu seats", test_cpu_seats }, { "hot seats", test_hot_seats });
+              { "screen shake setting", test_screen_shake }, { "text settings", test_text_settings }, { "cpu seats", test_cpu_seats }, { "hot seats", test_hot_seats },
+              { "title items", test_title_items });

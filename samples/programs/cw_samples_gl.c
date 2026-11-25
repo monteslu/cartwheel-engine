@@ -114,6 +114,27 @@ static const t3_gen_attribute a_basic_lmap_c1lmap[] = {
   { "position", "vec3", 1, false },
 };
 
+/* ── basic+map ── */
+static const t3_bk_group_layout g_basic_map_render = { "render", 0, 128, 0, NULL, 0, NULL, 0 };
+static const t3_bk_texture_layout t_basic_map_object[] = {
+  { "nodeUniform1", 1, T3_BK_SAMPLE_FLOAT, T3_BK_DIM_2D, false, false, false, "map", 0 },
+};
+static const t3_bk_group_layout g_basic_map_object = { "object", 1, 144, 0, t_basic_map_object, 1, NULL, 0 };
+static const t3_bk_group_layout *const groups_basic_map[] = { &g_basic_map_render, &g_basic_map_object };
+static const t3_gen_property p_basic_map[] = {
+  { "material.color", 1, 0, 12, false },
+  { "material.opacity", 1, 68, 4, false },
+  { "camera.matrixWorldInverse", 0, 64, 64, false },
+  { "object.matrixWorld", 1, 80, 64, false },
+  { "map.matrix", 1, 16, 44, true },
+  { "camera.projectionMatrix", 0, 0, 64, false },
+  { "map.flipY", 1, 64, 4, false },
+};
+static const t3_gen_attribute a_basic_map[] = {
+  { "uv", "vec2", 0, false },
+  { "position", "vec3", 1, false },
+};
+
 /* ── basic+map+rep ── */
 static const t3_bk_group_layout g_basic_map_rep_render = { "render", 0, 128, 0, NULL, 0, NULL, 0 };
 static const t3_bk_texture_layout t_basic_map_rep_object[] = {
@@ -32826,6 +32847,7 @@ static const t3_gen_program programs[] = {
   { "basic+instbig+icol", T3_GEN_BASIC, 35184372089088ull, { 0, 0, 0, 0 }, NULL, T3_GEN_GL, groups_basic_instbig_icol, 2, p_basic_instbig_icol, 5, a_basic_instbig_icol, 7, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 4, 5, 0 },
   { "basic+lmap", T3_GEN_BASIC, 4194304ull, { 0, 0, 0, 0 }, NULL, T3_GEN_GL, groups_basic_lmap, 2, p_basic_lmap, 8, a_basic_lmap, 2, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 6, 7, 0 },
   { "basic+lmap+c1lmap", T3_GEN_BASIC, 1152921504611041280ull, { 0, 0, 0, 0 }, NULL, T3_GEN_GL, groups_basic_lmap_c1lmap, 2, p_basic_lmap_c1lmap, 8, a_basic_lmap_c1lmap, 2, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 8, 7, 0 },
+  { "basic+map", T3_GEN_BASIC, 1ull, { 0, 0, 0, 0 }, NULL, T3_GEN_GL, groups_basic_map, 2, p_basic_map, 7, a_basic_map, 2, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 9, 10, 0 },
   { "basic+map+rep", T3_GEN_BASIC, 65ull, { 0, 0, 0, 0 }, NULL, T3_GEN_GL, groups_basic_map_rep, 2, p_basic_map_rep, 7, a_basic_map_rep, 2, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 9, 10, 0 },
   { "basic+map+trans+instbig+icol", T3_GEN_BASIC, 35184372089105ull, { 0, 0, 0, 0 }, NULL, T3_GEN_GL, groups_basic_map_trans_instbig_icol, 2, p_basic_map_trans_instbig_icol, 7, a_basic_map_trans_instbig_icol, 8, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 11, 12, 0 },
   { "basic+trans", T3_GEN_BASIC, 16ull, { 0, 0, 0, 0 }, NULL, T3_GEN_GL, groups_basic_trans, 2, p_basic_trans, 5, a_basic_trans, 1, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 0, 13, 0 },
@@ -33127,4 +33149,4 @@ static const t3_gen_program programs[] = {
   { "toon+gmap+l0001+xcluster_csm", T3_GEN_TOON, 4611686018427387904ull, { 0, 0, 0, 1 }, "cluster_csm", T3_GEN_GL, groups_toon_gmap_l0001_xcluster_csm, 3, p_toon_gmap_l0001_xcluster_csm, 58, a_toon_gmap_l0001_xcluster_csm, 2, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 476, 477, 0 },
   { "toon+l0001+xcluster_csm", T3_GEN_TOON, 0ull, { 0, 0, 0, 1 }, "cluster_csm", T3_GEN_GL, groups_toon_l0001_xcluster_csm, 3, p_toon_l0001_xcluster_csm, 54, a_toon_l0001_xcluster_csm, 2, NULL, 0, { 0, 0, 0 }, { 0, 0, 0 }, NULL, NULL, &text, 478, 479, 0 },
 };
-const t3_gen_table cw_samples_gl = { programs, 305 };
+const t3_gen_table cw_samples_gl = { programs, 306 };

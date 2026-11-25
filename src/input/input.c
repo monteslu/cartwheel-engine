@@ -427,9 +427,42 @@ static void track_devices(const cw_raw_input *raw) {
   I.prompt_count = 0; /* glyphs are counted per frame */
 }
 
+/* a window coordinate in the pointer channel's steps (1/16 of a logical pixel) */
+static int32_t ptr_q(float v) { return (int32_t)(v >= 0 ? v * 16.0f + 0.5f : v * 16.0f - 0.5f); }
+
+/* this frame's pointer: the mouse (or the finger an app's touch_pointer made it) while it is over the window, else the
+ * first finger down; where a tap landed on a frame with one; went down / up this frame */
+static void frame_pointer(const cw_raw_input *raw) {
+  bool was_down = I.frame_ptr.flags & CW__PTR_DOWN;
+  cw__ptr p = { 0 };
+  float x = 0, y = 0;
+  if (raw->mouse_present || raw->mouse_from_touch) {
+    p.flags |= CW__PTR_PRESENT;
+    if (raw->mouse_buttons & 1u) p.flags |= CW__PTR_DOWN;
+    if (raw->mouse_buttons & 2u) p.flags |= CW__PTR_SECONDARY;
+    if (raw->mouse_from_touch) p.flags |= CW__PTR_TOUCH;
+    x = raw->mouse_x, y = raw->mouse_y;
+  }
+  if (!(p.flags & CW__PTR_DOWN))
+    for (int i = 0; i < CW_MAX_TOUCHES; i++)
+      if (raw->touches[i].active || raw->touches[i].tapped) {
+        p.flags |= CW__PTR_PRESENT | CW__PTR_TOUCH | (raw->touches[i].active ? CW__PTR_DOWN : 0);
+        x = raw->touches[i].x, y = raw->touches[i].y;
+        break;
+      }
+  float tx, ty;
+  if (raw_tap(raw, &tx, &ty)) p.flags |= CW__PTR_PRESENT | CW__PTR_PRESSED, x = tx, y = ty;
+  bool down = p.flags & CW__PTR_DOWN;
+  if ((was_down && !down) || ((p.flags & CW__PTR_PRESSED) && !down)) p.flags |= CW__PTR_RELEASED;
+  p.x = ptr_q(x), p.y = ptr_q(y);
+  I.frame_ptr = p;
+  if (p.flags & CW__PTR_RELEASED) I.pend_release = true;
+}
+
 void cw_input_frame_begin(const cw_raw_input *raw) {
   if (!I.init) return;
   track_devices(raw);
+  frame_pointer(raw);
   cw__touch_update(raw);
   for (int p = 0; p < CW_INPUT_MAX_PLAYERS; p++) {
     for (int a = 0; a < I.count; a++) {
@@ -488,6 +521,12 @@ static void live_tick(void) {
   }
 }
 
+uint32_t cw__pointer_hash(const cw__ptr *p, uint32_t h) {
+  uint8_t b[9] = { p->flags };
+  for (int i = 0; i < 4; i++) b[1 + i] = (uint8_t)((uint32_t)p->x >> (8 * i)), b[5 + i] = (uint8_t)((uint32_t)p->y >> (8 * i));
+  return cw_hash32(b, 9, h);
+}
+
 uint32_t cw__snapshot_hash(const cw__snapshot *s, int count, uint32_t h) {
   for (int p = 0; p < CW_INPUT_MAX_PLAYERS; p++)
     for (int a = 0; a < count; a++) {
@@ -501,6 +540,7 @@ void cw__input_tick_close(void) {
   if (!I.tick_open) return;
   I.tick_open = false;
   I.stream_hash = cw__snapshot_hash(I.tick, I.count, I.stream_hash);
+  if (I.pointer_on || cw__input_replay_pointer()) I.stream_hash = cw__pointer_hash(&I.tick->ptr, I.stream_hash);
   I.stream_ticks++;
   /* the gate control: what the game set left out of the recording (as if a CPU bypassed the input path) */
   if (I.tick_rec) cw__input_record_tick(cw__input_record_skip_set() && I.tick == &I.tick_live ? &I.tick_dev : I.tick);
@@ -519,6 +559,13 @@ void cw_input_tick_begin(void) {
   I.tick_mouse = I.pend_mouse;
   I.pend_mouse = 0;
   I.tick_tap = I.pend_tap, I.tick_tap_x = I.pend_tap_x, I.tick_tap_y = I.pend_tap_y;
+  /* the tick's pointer: where it is now, a press (and where it landed) or a release any frame since the last tick saw */
+  cw__ptr lp = I.frame_ptr;
+  lp.flags &= (uint8_t)~(CW__PTR_PRESSED | CW__PTR_RELEASED);
+  if (I.pend_tap) lp.flags |= CW__PTR_PRESENT | CW__PTR_PRESSED, lp.x = ptr_q(I.pend_tap_x), lp.y = ptr_q(I.pend_tap_y);
+  if (I.pend_release) lp.flags |= CW__PTR_RELEASED;
+  I.pend_release = false;
+  I.tick_live.ptr = lp;
   I.pend_tap = false;
   I.tick = &I.tick_live;
   I.tick_dev = I.tick_live;
@@ -597,12 +644,40 @@ bool cw__input_key_pressed(int key) {
 uint32_t cw__input_mouse_pressed(void) { return I.ctx == CW_INPUT_TICK ? I.tick_mouse : cw_input_raw()->mouse_pressed; }
 bool cw__input_tap(float *x, float *y) {
   if (I.ctx != CW_INPUT_TICK) return raw_tap(cw_input_raw(), x, y);
+  if (I.pointer_on || cw__input_replay_pointer()) { /* the channel: the tick's recorded (or replayed) pointer */
+    const cw__ptr *p = &I.tick->ptr;
+    if (!(p->flags & CW__PTR_PRESSED)) return false;
+    *x = (float)p->x / 16.0f, *y = (float)p->y / 16.0f;
+    return true;
+  }
   if (!I.tick_tap) return false;
   *x = I.tick_tap_x, *y = I.tick_tap_y;
   return true;
 }
 
 uint32_t cw_input_stream_hash(void) { return I.stream_hash; }
+
+/* ── the pointer channel ───────────────────────────────────────────── */
+
+void cw_input_pointer_channel(bool on) {
+  cw__input_ensure_init();
+  I.pointer_on = on;
+}
+bool cw_input_pointer_channel_on(void) { return I.init && I.pointer_on; }
+
+cw_pointer cw_input_pointer(void) {
+  cw_pointer o = { 0 };
+  if (!I.init) return o;
+  const cw__ptr *p = I.ctx == CW_INPUT_TICK ? &I.tick->ptr : &I.frame_ptr;
+  o.present = p->flags & CW__PTR_PRESENT;
+  o.down = p->flags & CW__PTR_DOWN;
+  o.pressed = p->flags & CW__PTR_PRESSED;
+  o.released = p->flags & CW__PTR_RELEASED;
+  o.touch = p->flags & CW__PTR_TOUCH;
+  o.secondary = p->flags & CW__PTR_SECONDARY;
+  o.pos = cw_v2((float)p->x / 16.0f, (float)p->y / 16.0f);
+  return o;
+}
 
 /* ── rebinding capture ─────────────────────────────────────────────── */
 

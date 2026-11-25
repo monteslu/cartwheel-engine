@@ -1,8 +1,9 @@
 /* cartwheel/shell.h: the plumbing around a game's play, so a game writes only
  * its gameplay and art.
  *
- *   loading screen -> title (Play, Settings, Quit) -> join (1-4 players) ->
+ *   loading screen -> title (Play, the game's own items if any, Settings, Quit) -> join (1-4 players) ->
  *   play <-> pause (Resume, the game's own items if any, Settings, Quit to title)
+ *   title -> a page of the game's (a title item: Credits, How to play) -> back to the title
  *
  * Settings: graphics (cartwheel/quality.h; left / right step the preset,
  * accept opens the graphics page of cartwheel/quality_menu.h with every
@@ -82,12 +83,31 @@
  * the menus' sounds (move, select, back, join, pause), the screen hook starts
  * each screen's music.
  *
- * A scene app's tree (cw_scene_app) is paused outside play, so its nodes
- * hold still under the menus.
+ * The pause rule: a scene app's tree (cw_scene_app) is paused on every screen but play (loading, title, join, a
+ * title page, pause, settings, and the "Starting..." answer), so its nodes hold still under the menus. A paused tree
+ * runs no process or physics of its nodes (except those whose pause mode says to run while paused) and does NOT call
+ * the app's fixed_update: in a scene app, code in fixed_update runs only in play. The menus tick from a hook of the
+ * tree's own instead. What must run while the menus show goes in cw_shell_desc.menu_update, which the shell calls on
+ * every tick the menus own, in a scene app and in a plain app alike: above all a test's or an autopilot's start
+ * (cw_shell_start / cw_shell_start_seats from a cw_test_env switch), which in a scene app's fixed_update would wait at
+ * the title forever. A plain app (no scene tree) keeps calling its fixed_update on every screen; cw_shell_update
+ * returns false while a menu owns the tick.
+ *
+ *   static void menu_update(cw_shell_screen screen, void *user) {   // cw_shell_desc.menu_update
+ *     const char *seats = screen == CW_SHELL_TITLE ? cw_test_env("MY_GAME_SEATS") : NULL;
+ *     if (seats && !started) started = true, cw_shell_start(atoi(seats));
+ *   }
+ *
+ * Title items (cw_shell_desc.title_items): up to two of the game's own between Play and Settings ("Credits", "How to
+ * play"), as the pause menu's. Choosing one opens a page of the game's (screen CW_SHELL_PAGE, cw_shell_page says
+ * which): the shell draws draw_background (or its dark panel), then the game's draw_page, then a hint; Back, accept or
+ * a tap anywhere goes back to the title with the item still selected. A page that wants more than one view reads
+ * ui_left / ui_right (the shell leaves them) in menu_update.
  *
  * Determinism: menus run in fixed_update from the input snapshot, so a
  * replay drives them like gameplay. A test or an autopilot build skips them
- * with cw_shell_start. Debug fields: shell.screen, shell.hud (cw_shell_hud_shown), shell.players, shell.item,
+ * with cw_shell_start (from cw_shell_desc.menu_update, which runs in a scene app too). Debug fields: shell.screen (a
+ * cw_shell_screen: 1 title, 3 play, 6 a title page), shell.page (cw_shell_page), shell.hud (cw_shell_hud_shown), shell.players, shell.item,
  * shell.shake, shell.settings (the game's Settings rows shown), shell.starting (1 a press to play was answered, 2 "Starting..." has been drawn),
  * shell.selection, shell.two_colour, shell.ink and shell.paper (0xRRGGBB). */
 #ifndef CW_SHELL_H
@@ -110,6 +130,7 @@ typedef enum {
   CW_SHELL_PLAY,     /* gameplay: cw_shell_update returns true */
   CW_SHELL_PAUSE,
   CW_SHELL_SETTINGS, /* from the title or the pause menu */
+  CW_SHELL_PAGE,     /* a page of the game's, opened from a title item (cw_shell_desc.title_items): credits, how to play */
 } cw_shell_screen;
 
 /* A row of the game's own on the Settings screen: a named choice, such as "Visual style: All / Neon / Paper". It draws
@@ -235,6 +256,22 @@ typedef struct cw_shell_desc {
   /* Each seat's name and colour on the join screen (NULL / alpha 0: "P1".. and no colour): "Red", "Ada", ... */
   const char *seat_names[CW_SHELL_MAX_SEATS];
   cw_color seat_colors[CW_SHELL_MAX_SEATS];
+  /* Up to two items of the game's own on the title, after Play and before Settings ("Credits", "How to play"), drawn
+   * like the others. NULL (or empty) leaves a slot out. Read every frame the title shows, so cw_shell_set_title_items
+   * (or new text in a buffer a label points at) shows at once; a label's text must stay valid while the title shows. */
+  const char *title_items[2];
+  /* An item of title_items was chosen: the shell opens the game's page (CW_SHELL_PAGE; the Select sound), then this
+   * runs with the item's index in title_items (0 or 1). NULL: the page opens all the same (draw_page draws it). */
+  void (*title_item)(int index, void *user);
+  /* Draws the page of a title item (index in title_items) in the shell's 2D pass, canvas units, over draw_background
+   * or the shell's dark panel; the shell then draws a hint to go back at the foot. NULL: the item's label as a heading. */
+  void (*draw_page)(int index, cw_vec2 canvas, void *user);
+  /* Runs on every tick the menus own (cw_shell_update false: loading, title, join, a title page, pause, settings,
+   * "Starting..."), before the menus read input, with the screen showing. In a scene app the paused tree calls no
+   * fixed_update outside play (the pause rule above), so a test's or an autopilot's start goes here: cw_shell_start /
+   * cw_shell_start_seats in it starts the match on this tick (gameplay runs from this tick on). A page's own input (ui_left
+   * / ui_right to turn pages) is read here too. */
+  void (*menu_update)(cw_shell_screen screen, void *user);
 } cw_shell_desc;
 
 /* The save region for cw_app_desc.save / save_size: the shell's settings and
@@ -307,6 +344,11 @@ bool cw_shell_join_requested(void);
  * when no seat is free, or when nobody without a seat pressed A. Call it in fixed_update after cw_shell_update;
  * cw_shell_join_open stays the way to leave a seat or rearrange. Pads only: the keyboard already drives a player. */
 bool cw_shell_join_press(void);
+/* The game's title items (as cw_shell_desc.title_items, NULL items or NULL for none), from the next frame the title
+ * draws. The pointers are kept: the strings must outlive the title showing them. */
+void cw_shell_set_title_items(const char *const items[2]);
+/* The title item whose page shows (its index in title_items, 0 or 1), -1 on every other screen. */
+int cw_shell_page(void);
 /* The game's pause menu items (as cw_shell_desc.pause_items, NULL items or NULL for none), from the next time the
  * pause menu opens. The pointers are kept: the strings must outlive the menu showing them. */
 void cw_shell_set_pause_items(const char *const items[2]);

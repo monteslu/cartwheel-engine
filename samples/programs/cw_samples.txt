@@ -1,5 +1,6 @@
 # r187 program states for cw_samples (cmake/programs.cmake; tools/programs.mjs adds what runs lack)
-# closure: off (one table for every sample: their environments are not each other's; tools/programs.mjs)
+# closure: off
+# (one table for every sample: their environments are not each other's; tools/programs.mjs)
 basic
 basic+instbig
 basic+instbig+icol
@@ -305,3 +306,4 @@ physical+skin+ds+sheen+l1001
 depth+skin+xskinshade
 physical+skin+sheen+l1001+xskinshade
 basic+trans+xhfog
+basic+map

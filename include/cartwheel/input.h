@@ -470,6 +470,51 @@ uint32_t cw_input_replay_hash(void);  /* hash of the replayed stream so far: equ
  * replayed). Also published as debug fields "input.hash" and "input.ticks". */
 uint32_t cw_input_stream_hash(void);
 
+/* ── the pointer channel: taps and clicks recorded, replayed, hashed ──
+ * A game played with the mouse or a finger (a board game picking squares and
+ * cards with cw_pick3d_canvas, a cursor following the pointer) reads the
+ * pointer in fixed_update through cw_input_pointer: one snapshot per tick,
+ * like the actions. With the channel on (cw_input_pointer_channel(true) in
+ * init, before a recording begins) that snapshot is recorded, replayed and
+ * hashed with the actions: a recording made while it is on carries the
+ * pointer (format version 2), a replay of it gives every tick the recorded
+ * pointer instead of the live one, and cw_input_stream_hash, the record hash
+ * and the replay hash cover it. The shell's menus answer taps from the same
+ * snapshot, so a replay drives them too.
+ *
+ *   static void init(void *u) { cw_input_pointer_channel(true); ... }
+ *   static void fixed_update(void *u, double dt) {
+ *     cw_pointer pt = cw_input_pointer();
+ *     if (pt.pressed) {                       // a click or a finger landing, since the last tick
+ *       cw_pick3d_hit hit;
+ *       if (cw_pick3d_canvas(tree, cw_r2d_window_to_canvas(pt.pos), NULL, &hit, 1, NULL)) take(hit.node);
+ *     }
+ *   }
+ *
+ * Off (the default) nothing changes: the stream hash, the record hash and the
+ * recording are what they were before v0.84.0 (a version 1 recording, byte
+ * for byte), and cw_input_pointer still answers from the live pointer. Every
+ * recording replays: version 1 (no pointer: a replay gives a pointer that is
+ * not present) and version 2. Cost: an idle pointer records nothing; a moving
+ * one a few bytes a tick. Position steps are 1/16 of a logical window pixel.
+ * Gate control: CW_TEST_POINTER_UNRECORDED=1 (read at record_begin) leaves the
+ * pointer out of a recording, so its replay loses the clicks. */
+typedef struct cw_pointer {
+  bool present;   /* the mouse is over the window, or a finger is down: pos is where */
+  bool down;      /* the left button or a finger is held */
+  bool pressed;   /* a click or a finger landing since the tick before (a press and release inside one tick counts) */
+  bool released;  /* the button or finger came up since the tick before */
+  bool touch;     /* a finger, not the mouse */
+  bool secondary; /* the right button is held */
+  cw_vec2 pos;    /* logical window coordinates (where a press landed, on a tick with one); cw_r2d_window_to_canvas for the canvas */
+} cw_pointer;
+/* Record, replay and hash the pointer from the next recording and tick on (default off). */
+void cw_input_pointer_channel(bool on);
+bool cw_input_pointer_channel_on(void); /* the channel is on (cw_input_pointer_channel) */
+/* The pointer: in fixed_update (the tick context) this tick's snapshot, live or from a replay; elsewhere this frame's
+ * (pressed and released then mean this frame). */
+cw_pointer cw_input_pointer(void);
+
 /* ── driving the module ────────────────────────────────────────────────
  * The platform calls these from its frame loop (once cw_action_add has run).
  * Unit tests and tools that step input without the platform loop call them

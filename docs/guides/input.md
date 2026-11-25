@@ -226,6 +226,18 @@ node tools/run-cart.mjs --host native --app input_demo --frames 100 --input test
 
 179 ticks of input took 317 bytes. Every app with actions also publishes `input.hash` and `input.ticks` as debug fields (the hash of every tick snapshot so far), and the `record start|stop|status|fetch|replay` debug command records and replays from outside the game, which is how a bug report carries its exact input.
 
+### The pointer channel: clicks and taps
+
+A game played with the mouse or a finger (a board game picking squares and cards, a cursor following the pointer) reads the pointer in `fixed_update` with [cw_input_pointer](api:cw_input_pointer): one snapshot a tick, like the actions. It says whether the pointer is there (`present`, the mouse over the window or a finger down), `down`, `pressed` (a click or a finger landing since the tick before, a press and release inside one tick included), `released`, `touch`, `secondary` (the right button) and `pos` in logical window coordinates (where a press landed, on a tick with one). Outside a tick it answers for the frame.
+
+Turn the channel on with [cw_input_pointer_channel](api:cw_input_pointer_channel)`(true)` in `init`, before a recording begins: the pointer is then recorded (format version 2), replayed and hashed with the actions, so a match won with clicks replays exactly, and the shell's menus answer taps from the same snapshot. `board_kit` turns cards over with clicks it reads only this way:
+
+@include samples/board_kit/main.c#pointer
+
+Off (the default) nothing changes: the stream hash, the record hash and the recordings are what they were (version 1, byte for byte), so no game's golden input hash moves until it turns the channel on. Every recording replays: version 1 has no pointer (a replay gives one that is not present), version 2 does, also into a build with the channel off. An idle pointer records nothing; a moving one costs a few bytes a tick. Positions are kept in steps of 1/16 of a logical pixel, so a replay gives the same position on every host.
+
+The `board-kit-pointer` gate clicks two cards and the table, replays the match from its own recording and requires the same cards turned and the same input hash; its control (`CW_TEST_POINTER_UNRECORDED=1`) leaves the pointer out of the recording and the replay loses every click. `unit-input-pointer` checks random clicks, drags, the right button and finger taps over frames with no tick and with several, the channel off, and an old recording.
+
 ## Actions set by the game: CPU seats
 
 A computer player decides inside `fixed_update` and presses its seat's actions for that tick, as a pad would: [cw_input_set_actions](api:cw_input_set_actions) sets the whole seat (everything it does not list is up), [cw_input_set_action](api:cw_input_set_action) one action, and [cw_input_set_vector](api:cw_input_set_vector) a stick onto four actions. The same queries read them back (`cw_action_pressed`, `cw_action_just_pressed` against the tick before, strength, axis, vector), so the game's rules read every seat one way and never ask who is a CPU. A board game with four CPUs plays through exactly the code people use, and a test can drive any seat the same way.
