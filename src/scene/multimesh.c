@@ -154,6 +154,17 @@ static void parts_free(multimesh *d) {
   d->nparts = 0;
 }
 
+/* a MultiMeshInstance3D's instance index for instance k of one of its chunk meshes (picking, src/scene/pick3d.c):
+ * the chunks hold the instances cell by cell. -1 when im is not one of n's. */
+int cw__multimesh_instance_of(cw_node n, const t3_object *im, int k) {
+  multimesh *d = MM(n);
+  if (!d || k < 0) return -1;
+  for (int c = 0; c < d->chunks.count; c++)
+    for (int p = 0; p < d->nparts; p++)
+      if ((const t3_object *)d->chunks.data[c].im[p] == im) return k < d->chunks.data[c].count ? d->order[d->chunks.data[c].start + k] : -1;
+  return -1;
+}
+
 static void chunks_free(cw_node n, multimesh *d) {
   t3_object *group = cw_node3d_object(n);
   for (int c = 0; c < d->chunks.count; c++)

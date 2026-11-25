@@ -98,6 +98,84 @@
     "note": "the join screen opened during play: a third pad takes seat 3, then the pad on seat 2 leaves and Start confirms (seats 1 and 3 held, numbers do not shift), then the third pad is unplugged and its seat frees by itself: one seat left. Control: the third pad never presses A, so its unplugging changes nothing and the match sees one change fewer"
   },
   {
+    "name": "shell-cpu-seats",
+    "app": "hex_board",
+    "frames": 220,
+    "input": "shell-cpu-seats.json",
+    "controlInput": "shell-cpu-seats-control.json",
+    "hosts": ["native", "romdev"],
+    "webgpu": true,
+    "fields": ["shell.screen", "shell.players", "shell.join_kind", "shell.join_cursor", "game.seats", "game.cpu"],
+    "expect": { "shell.screen": 2, "shell.join_kind": [0, 3, 4, 0, 0, 0, 0, 0], "game.seats": 3, "game.cpu": [-1, 1, 2, -1, -1, -1, -1, -1] },
+    "note": "CPU seats with the pad alone: Play, the pad joins seat 1 with South, right and up three times (a hot seat, CPU Easy, Normal) make seat 2 a CPU Normal, right and up four times make seat 3 a CPU Hard, Start plays (three seats: the person and two CPUs, the game reading the levels per seat with cw_shell_seat_cpu). Then the pause menu's Quit to title and Play again: the join screen opens with the two CPUs where the player left them (saved in the shell's save block). Control: the same presses without up, so no seat becomes a CPU"
+  },
+  {
+    "name": "shell-cpu-seats-touch",
+    "app": "hex_board",
+    "frames": 150,
+    "input": "shell-cpu-seats-touch.json",
+    "controlInput": "shell-cpu-seats-touch-control.json",
+    "hosts": ["native", "romdev"],
+    "webgpu": true,
+    "fields": ["shell.screen", "shell.players", "shell.seat_cpu", "game.seats", "game.cpu"],
+    "expect": { "shell.screen": 3, "shell.players": 3, "shell.seat_cpu": [-1, 1, 0, -1, -1, -1, -1, -1], "game.seats": 3, "game.cpu": [-1, 1, 0, -1, -1, -1, -1, -1] },
+    "note": "CPU seats by touch alone (a finger, pointer slot 1): a tap on Play, three taps on seat 2 (a hot seat, CPU Easy, then Normal), two on seat 4 (a hot seat, then CPU Easy), then a tap away from the seats seats the touch player on seat 1 and plays: three seats, the CPUs keeping their order. Control: only the taps on Play and away from the seats, so the touch player plays alone"
+  },
+  {
+    "name": "hex-board-replay",
+    "app": "hex_board",
+    "frames": 2100,
+    "input": "hex-board-replay.json",
+    "env": { "HEX_BOARD_SEATS": "-1,0,1,2" },
+    "startCmds": ["@1000 replay"],
+    "controlEnv": { "HEX_BOARD_SEATS": "-1,0,1,2", "CW_TEST_SET_UNRECORDED": "1" },
+    "controlStartCmds": ["@1000 replay"],
+    "hosts": ["native", "romdev"],
+    "webgpu": true,
+    "fields": ["game.replay_done", "game.replay_match", "game.replay_hash_match", "game.seats", "game.cpu", "game.cpu_moves", "game.round", "game.wins", "input.hash"],
+    "expect": { "game.replay_done": 1, "game.replay_match": 1, "game.replay_hash_match": 1, "game.seats": 4, "game.cpu": [-1, 0, 1, 2, -1, -1, -1, -1] },
+    "note": "a person on a pad and three CPUs (Easy, Normal, Hard) that play by pressing the pad's actions with cw_input_set_actions: the match records from its start, then the replay request puts the game back and replays the recording (the CPU code runs and its sets are refused): the board, the CPUs' minds and the input hash come out the same as live. Control: CW_TEST_SET_UNRECORDED leaves the CPUs' actions out of the recording, as a CPU bypassing the input path would, and the replay loses their moves"
+  },
+  {
+    "name": "shell-hot-seats",
+    "app": "hex_board",
+    "frames": 242,
+    "input": "shell-hot-seats.json",
+    "controlInput": "shell-hot-seats-control.json",
+    "hosts": ["native", "romdev"],
+    "webgpu": true,
+    "fields": ["shell.screen", "shell.players", "shell.seat_hot", "shell.seat_cpu", "shell.turn", "game.seats", "game.cpu"],
+    "expect": { "shell.screen": 3, "shell.players": 8, "shell.seat_hot": [1, 1, 1, 1, 1, 1, 0, 0], "shell.seat_cpu": [-1, -1, -1, -1, -1, -1, 0, 2], "shell.turn": 0, "game.seats": 8, "game.cpu": [-1, -1, -1, -1, -1, -1, 0, 2] },
+    "note": "eight seats from one pad on the join screen (hot_seats and cpu_seats, named and coloured seats in two rows): up once on each of the first six makes it a hot seat, the seventh a CPU Easy, the eighth a CPU Hard, and Start plays without seating the pad (it drives the hot seats). Control: no up presses, so Start seats the pad alone"
+  },
+  {
+    "name": "hex-board-hotseat",
+    "app": "hex_board",
+    "frames": 800,
+    "input": "hex-board-hotseat.json",
+    "env": { "HEX_BOARD_SEATS": "-2,-2,-2,-2,-2,-2,-2,-2" },
+    "startCmds": ["@400 replay"],
+    "controlEnv": { "HEX_BOARD_SEATS": "-2,-2,-2,-2,-2,-2,-2,-2", "CW_TEST_TURN_WRONG_SEAT": "1" },
+    "controlStartCmds": ["@400 replay"],
+    "hosts": ["native", "romdev"],
+    "webgpu": true,
+    "fields": ["game.placed_by", "game.stray", "game.turn", "game.replay_done", "game.replay_match", "game.replay_hash_match", "shell.seat_hot", "shell.turn", "input.hash"],
+    "expect": { "game.placed_by": [2, 2, 2, 2, 2, 2, 2, 2], "game.stray": 0, "game.replay_done": 1, "game.replay_match": 1, "game.replay_hash_match": 1, "shell.seat_hot": [1, 1, 1, 1, 1, 1, 1, 1] },
+    "note": "eight hot seats on one pad: sixteen presses of South, each held three frames, place two stones for every seat in turn (cw_shell_set_turn hands the pad to the seat whose turn it is; the press that ends a turn is not the next seat's first press); no seat hears a press out of turn (game.stray); the match records and replays to the same state and input hash. Control: CW_TEST_TURN_WRONG_SEAT hands the pad to the seat after the turn's, so no stone is placed and every press is a stray"
+  },
+  {
+    "name": "unit-input-set-actions",
+    "app": "unit_input",
+    "hosts": ["native"],
+    "frames": 2,
+    "minColors": 1,
+    "fields": ["unit.passed", "unit.failed", "unit.checksum", "unit.done"],
+    "controlFrames": 2,
+    "expect": { "unit.failed": 0, "unit.done": 1 },
+    "controlEnv": { "CW_TEST_SET_UNRECORDED": "1" },
+    "note": "actions set by the game (cw_input_set_action, _actions, _vector): this tick only, refused outside a tick, just_pressed against the tick before, a whole seat released, a stick read back, the set in the stream hash. Three CPU seats beside a pad person, recorded, then replayed with the CPU code running (its sets refused) and with no CPU code at all: the same state and hashes. Control: CW_TEST_SET_UNRECORDED leaves what the game set out of the recording, so both replays lose the CPUs' moves (unit.failed 4). Native only: in a cart the suite's touch cases (run in init, before a cart host delivers CW_TEST_TOUCH_CONTROLS) find the touch controls off and fail, as they do for unit-input; hex-board-replay covers set actions in the carts on GL and WebGPU"
+  },
+  {
     "name": "shell-join-press",
     "app": "shell_join",
     "frames": 90,
@@ -1179,9 +1257,9 @@
     "controlInput": "input-players-control.json",
     "maxGt16": 0.0005,
     "expect": {
-      "players.jump_jp": [1, 3, 5, 6],
-      "players.jump_frames": [1, 3, 5, 6],
-      "players.axis": [0, -4, 0.799853503704071, 3],
+      "players.jump_jp": [1, 3, 5, 6, 0, 0, 0, 0],
+      "players.jump_frames": [1, 3, 5, 6, 0, 0, 0, 0],
+      "players.axis": [0, -4, 0.799853503704071, 3, 0, 0, 0, 0],
       "cw.pad1.connected": 1,
       "cw.pad2.connected": 1,
       "cw.pad3.connected": 1
@@ -1197,9 +1275,9 @@
     "controlInput": "input-players-control.json",
     "maxGt16": 0.0005,
     "expect": {
-      "players.jump_jp": [1, 3, 5, 6],
-      "players.jump_frames": [1, 3, 5, 6],
-      "players.axis": [0, -4, 0.799853503704071, 3],
+      "players.jump_jp": [1, 3, 5, 6, 0, 0, 0, 0],
+      "players.jump_frames": [1, 3, 5, 6, 0, 0, 0, 0],
+      "players.axis": [0, -4, 0.799853503704071, 3, 0, 0, 0, 0],
       "cw.pad1.connected": 1,
       "cw.pad2.connected": 1,
       "cw.pad3.connected": 1
@@ -1455,12 +1533,7 @@
         0
       ],
       "sample.dev_n": 4,
-      "prompt.devices": [
-        4,
-        1,
-        1,
-        1
-      ],
+      "prompt.devices": [4, 1, 1, 1, 0, 0, 0, 0],
       "prompt.errors": 0
     },
     "note": "an input script switches the device with its first event on another one: pad, touch, pad, touch, and the prompts redraw for each (the touch controls own disc and stick). Control: no touches, so the pad never hands over"
@@ -1493,12 +1566,7 @@
         0
       ],
       "sample.dev_n": 5,
-      "prompt.devices": [
-        3,
-        1,
-        1,
-        1
-      ],
+      "prompt.devices": [3, 1, 1, 1, 0, 0, 0, 0],
       "prompt.errors": 0
     },
     "note": "the keyboard and mouse in an input script: a key, a pad button, a key, a mouse click (romdev has no keyboard op). Control: the pad button alone"
@@ -1528,12 +1596,7 @@
         0,
         0
       ],
-      "prompt.devices": [
-        4,
-        4,
-        4,
-        1
-      ],
+      "prompt.devices": [4, 4, 4, 1, 4, 4, 4, 4],
       "prompt.errors": 0
     },
     "note": "CW_TEST_PROMPT_DEVICE=touch forces every player (native runs; carts take the prompt debug request), whatever the pad presses. Control: the variable empty"
@@ -1599,6 +1662,18 @@
     "controlFrames": 2,
     "expect": { "unit.failed": 0, "unit.done": 1 },
     "controlEnv": { "CW_TEST_INJECT_FAIL": "1" }
+  },
+  {
+    "name": "unit-hex",
+    "app": "unit_hex",
+    "webgpu": true,
+    "frames": 2,
+    "minColors": 1,
+    "fields": ["unit.passed", "unit.failed", "unit.checksum", "unit.done"],
+    "controlFrames": 2,
+    "expect": { "unit.failed": 0, "unit.done": 1 },
+    "controlEnv": { "CW_TEST_HEX_NAIVE": "1" },
+    "note": "hex grids (cartwheel/hex.h): every call against an independent answer (a breadth-first walk for distance and reach, the nearest centre by brute force for the hex under a point, adjacency for lines, a filter of a box for rings), both orientations, 2D and 3D, the four offset conventions, the hex map through growth and removal with sorted keys and a contents hash. The control checks point-to-hex and distance through the two usual mistakes (q and r rounded on their own, distance as max(|dq|, |dr|)), which must fail"
   },
   {
     "name": "motion-demo",
@@ -9230,5 +9305,206 @@
       "pf.top_y": 3.2516860961914062
     },
     "note": "platformer2d: the controller on a scripted course (one-way platform up and drop, wall jumps, dash, swim stroke); every counter and the final state must agree on every host"
+  },
+  {
+    "name": "board-pick",
+    "app": "board_pick",
+    "frames": 120,
+    "input": "board-pick.json",
+    "controlFrames": 120,
+    "controlEnv": {
+      "CW_TEST_PICK_OFFSET": "60"
+    },
+    "maxGt16": 0.003,
+    "webgpu": {
+      "vsGl": 0.02
+    },
+    "fields": [
+      "pick.n",
+      "pick.last",
+      "pick.seq",
+      "cur.p0",
+      "cur.p1",
+      "cur.hops0",
+      "cur.hops1",
+      "cur.p1_pads",
+      "cur.point",
+      "cop.pairs",
+      "cop.moved",
+      "fight.px",
+      "bp.mode"
+    ],
+    "expect": {
+      "pick.n": 4,
+      "pick.seq": 3012,
+      "pick.last": 5,
+      "cur.point": 0,
+      "cur.p0": 33,
+      "cur.p1_pads": 14,
+      "cop.pairs": 0,
+      "fight.px": 0
+    },
+    "note": "3D picking under a perspective camera (cartwheel/pick3d.h): samples/board_pick, four mouse clicks through cw_pick3d_canvas with the group \"pieces\" lift pieces 4 and 0, miss on an empty square (which moves player 1's cursor there through cw_cursors_point) and lift piece 5 (pick.seq 3012, base 8, 7 = none); two pads hop their cursors between the 36 squares at the same time (player 0 right once, then down held: a hop at once and repeats at 18 and 27 ticks, to square 33). Control: CW_TEST_PICK_OFFSET=60 moves the pointer's ray 60 canvas pixels right of where it was clicked: the picks miss"
+  },
+  {
+    "name": "board-pick-ortho",
+    "app": "board_pick",
+    "frames": 120,
+    "input": "board-pick-ortho.json",
+    "env": {
+      "BP_MODE": "ortho"
+    },
+    "controlFrames": 120,
+    "controlEnv": {
+      "BP_MODE": "ortho",
+      "CW_TEST_PICK_OFFSET": "60"
+    },
+    "maxGt16": 0.003,
+    "webgpu": {
+      "vsGl": 0.02
+    },
+    "fields": [
+      "pick.n",
+      "pick.last",
+      "pick.seq",
+      "cur.p0",
+      "cur.p1",
+      "cur.hops0",
+      "cur.hops1",
+      "cur.p1_pads",
+      "cur.point",
+      "cop.pairs",
+      "cop.moved",
+      "fight.px",
+      "bp.mode"
+    ],
+    "expect": {
+      "bp.mode": 1,
+      "pick.n": 4,
+      "pick.seq": 3012,
+      "pick.last": 5,
+      "cur.point": 0,
+      "cur.p0": 33,
+      "cur.p1_pads": 14,
+      "cop.pairs": 0,
+      "fight.px": 0
+    },
+    "note": "3D picking under an orthographic camera (Camera3D projection ORTHOGONAL, size 9): the same clicks at the pieces' places in the orthographic picture pick the same pieces; the projection the sample logs is where the renderer drew them. Control: the ray moved 60 pixels right misses"
+  },
+  {
+    "name": "board-pick-split",
+    "app": "board_pick",
+    "frames": 120,
+    "input": "board-pick-split.json",
+    "env": {
+      "BP_MODE": "split"
+    },
+    "controlFrames": 120,
+    "controlEnv": {
+      "BP_MODE": "split",
+      "CW_TEST_PICK_OFFSET": "60"
+    },
+    "maxGt16": 0.003,
+    "webgpu": {
+      "vsGl": 0.02
+    },
+    "fields": [
+      "pick.n",
+      "pick.last",
+      "pick.seq",
+      "cur.p0",
+      "cur.p1",
+      "cur.hops0",
+      "cur.hops1",
+      "cur.p1_pads",
+      "cur.point",
+      "cop.pairs",
+      "cop.moved",
+      "fight.px",
+      "bp.mode"
+    ],
+    "expect": {
+      "bp.mode": 2,
+      "pick.n": 4,
+      "pick.seq": 3012,
+      "pick.last": 5,
+      "cur.point": 0,
+      "cur.p0": 33,
+      "cur.p1_pads": 28,
+      "cop.pairs": 0
+    },
+    "note": "3D picking in split screen: two views (cw_pipeline_split), the second player's camera across the table; clicks in each half pick through that half's camera (cw_pick3d_canvas, cw_canvas_view3d_at), and player 1's cursor hops by the directions of its own picture (up and left on the stick go to square 28 where the single view goes to 14). Control: the ray moved 60 pixels right misses"
+  },
+  {
+    "name": "board-cursor",
+    "app": "board_pick",
+    "frames": 120,
+    "input": "board-pick.json",
+    "controlFrames": 120,
+    "controlEnv": {
+      "CW_TEST_CURSOR_FLIP": "1"
+    },
+    "maxGt16": 0.003,
+    "webgpu": {
+      "vsGl": 0.02
+    },
+    "fields": [
+      "cur.p0",
+      "cur.p1",
+      "cur.hops0",
+      "cur.hops1",
+      "cur.p1_pads"
+    ],
+    "expect": {
+      "cur.p0": 33,
+      "cur.p1_pads": 14,
+      "cur.hops0": 4,
+      "cur.hops1": 2
+    },
+    "note": "two players' cursors between targets at once (cartwheel/cursor.h, towers' hop): square nodes as targets seen through the camera, player 0 right then down held (one hop, repeats at 18 and 27 ticks: 14 -> 15 -> 21 -> 27 -> 33), player 1 up then left from 21 (15, then 14). Control: CW_TEST_CURSOR_FLIP=1 reads both sticks mirrored, which picks the opposite neighbours"
+  },
+  {
+    "name": "board-coplanar",
+    "app": "board_pick",
+    "frames": 60,
+    "controlFrames": 60,
+    "controlEnv": {
+      "COPLANAR_SEPARATE": "0"
+    },
+    "maxGt16": 0.003,
+    "webgpu": {
+      "vsGl": 0.02
+    },
+    "fields": [
+      "cop.pairs",
+      "fight.px"
+    ],
+    "expect": {
+      "cop.pairs": 0,
+      "fight.px": 0
+    },
+    "note": "coplanar faces (cartwheel/coplanar.h): 36 squares and a stack of three cards laid flat in the board's top plane, all MeshInstance3D PLANE primitives sharing one geometry, are laid apart by cw_coplanar_separate_ex with CW_COPLANAR_UNSHARE (each its own copy); a scan finds no pair left and the top card's middle (12 x 12 window pixels read back) is all its own blue. Control: COPLANAR_SEPARATE=0 leaves the planes as built: 112 pairs, and the cards' colours fight through each other (95 of the 144 pixels)"
+  },
+  {
+    "name": "unit-pick3d",
+    "app": "unit_pick3d",
+    "frames": 2,
+    "minColors": 1,
+    "webgpu": true,
+    "fields": [
+      "unit.passed",
+      "unit.failed",
+      "unit.checksum",
+      "unit.done"
+    ],
+    "controlFrames": 2,
+    "expect": {
+      "unit.failed": 0,
+      "unit.done": 1
+    },
+    "controlEnv": {
+      "CW_TEST_INJECT_FAIL": "1"
+    },
+    "note": "board-game support: projection worked out by hand from the lens (a 90 degree camera, a turned one, an orthographic one looking down: world to screen, screen to world, the ray), picking on a board of pieces under a perspective and an orthographic camera (the cap hit with its point and face normal, the piece through its group, every hit nearest first, max distance, hidden, excluded and other-layer pieces passed through, a piece moved this tick hit with no frame drawn, a side face's normal, a point 1.2 m to the side lands on the board), split-screen views from the pipeline and the view under a point, a MultiMeshInstance3D's buffer index through its cells, a SubViewport world's camera and pixels; cursors (towers' hop scores, the cone, two players at once, hold-to-repeat at 18 and 9 ticks, the dead zone, the allow rule, the pointer's radius, each player's camera turning the stick round, node targets that move, a 3D hit on a target node); coplanar (a tile laid on a board found and laid in front, a tile 5 mm above not counted)"
   }
 ]

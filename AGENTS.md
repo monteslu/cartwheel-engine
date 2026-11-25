@@ -92,6 +92,8 @@ cw_node3d_set_position(box, (t3_vec3){ 0, 0.5f, 0 });
 `cw_node3d_look_at(cam, target, (t3_vec3){ 0, 1, 0 })`. One view per player: `cw_shell_split(NULL, cameras)`.
 Follow cameras ease (a critically damped spring); they never shake.
 
+**Board games, picking and cursors** (`pick3d.h`, `cursor.h`, `coplanar.h`; [Picking and projection](docs/guides/rendering-3d.md#picking-and-projection), [Cursors between targets](docs/guides/input.md#cursors-between-targets)): `cw_pick3d_canvas(tree, canvas_px, &(cw_pick3d_filter){ .group = "pieces" }, &hit, 1, NULL)` is the piece under the mouse or a finger, in whichever split-screen view it is; `cw_camera3d_world_to_screen` places a label over a 3D point (never write your own `project()`). A Camera3D with `projection = ORTHOGONAL` and `size` views a board square on. `cw_cursors_step(cur, player, stick)` hops each player's cursor between any set of spots (squares, cards, cities) by their own picture's directions; `cw_cursors_point` moves it where the pointer is. Flat pieces laid on a board: `cw_coplanar_separate_ex(root, 0.002f, &left, CW_COPLANAR_UNSHARE)` once the board is built, so nothing z-fights.
+
 **Lights and shadows** (nodes `DirectionalLight3D`, `OmniLight3D`, `SpotLight3D`; `lighting.h`;
 [Lights and shadows](docs/guides/rendering-3d.md#lights-and-shadows)): `shadow = true` casts.
 A sun covering a level uses cascades: `shadow_cascades = 4`, `shadow_distance = 200`. A single-map sun's
@@ -200,6 +202,16 @@ float x = cw_input_axis(player, left, right);
 cw_prompt_text(font, "{jump}: hop the gap", player, pos, size, color, CW_ALIGN_LEFT);  /* draws the player's button */
 cw_input_rumble(player, 0.8f, 0.4f, 120);             /* hits and blasts: the pad, never the camera */
 ```
+
+**Computer players** (`input.h`, `shell.h`, [CPU seats](docs/guides/input.md#actions-set-by-the-game-cpu-seats)): `cpu_seats = true` in
+`cw_shell_desc` offers each seat on the join screen as a person or a CPU at Easy, Normal or Hard (`cw_shell_seat_cpu(seat, &level)`);
+a CPU presses its seat's actions in `fixed_update` with `cw_input_set_actions(seat, values, n)`, so the rules read every seat
+through `cw_action_*` and recordings, replays and the input hash carry its moves. Never feed a CPU by writing game state directly.
+More people than pads (up to eight, turn-based): `hot_seats = true` and `cw_shell_set_turn(seat)` each turn hands the free pads to
+that seat (`cw_input_assign_pads`).
+
+**Hex boards** (`hex.h`, [hex grids](docs/guides/hex-grids.md)): `cw_axial` hexes, neighbours, distance, rings, lines,
+rotation, `cw_hex_to_world` / `cw_hex_from_world` for a pointy or flat layout, and `cw_hex_map` for a board's contents.
 
 **Audio** (`audio.h`, [audio](docs/guides/audio.md)): `cw_sound s = cw_sound_load("res://sfx/hit.wav", NULL);`
 `cw_audio_play(s, &(cw_play_desc){ .bus = cw_shell_sfx_bus() });` music on `cw_shell_music_bus()`; 3D sound and

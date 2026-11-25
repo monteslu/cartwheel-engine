@@ -47,7 +47,9 @@ typedef struct cw__input_state {
   int count;
   cw__action_def defaults[CW_INPUT_MAX_ACTIONS];
   int default_count;
-  int pad[CW_INPUT_MAX_PLAYERS];
+  int pad[CW_INPUT_MAX_PLAYERS];      /* the first pad of pads[] (-1 none): prompts, rumble, capture */
+  uint32_t pads[CW_INPUT_MAX_PLAYERS]; /* a bit per pad the player reads (cw_input_assign_pads) */
+  bool route_fresh[CW_INPUT_MAX_PLAYERS]; /* devices changed since the last frame: held buttons are not new presses */
   uint32_t devices[CW_INPUT_MAX_PLAYERS];
   /* snapshots */
   cw__snapshot frame, tick_live, tick_replay;
@@ -85,6 +87,13 @@ typedef struct cw__input_state {
   void *changed_user;
   /* stream */
   uint32_t stream_hash, stream_ticks;
+  /* a tick is hashed and recorded when it ENDS (the next tick_begin, ticks_end or record_end), so actions the game
+   * sets during fixed_update (cw_input_set_action) are in the hash and the recording like a pad's */
+  bool tick_open;            /* tick_begin ran and its snapshot is not hashed yet */
+  bool tick_rec;             /* a recording was running when the open tick began: it is recorded when it ends */
+  cw__snapshot tick_prev;    /* the tick snapshot before the open one (what just_pressed of a set action compares with) */
+  cw__snapshot tick_dev;     /* the open tick as the devices gave it, before any set (the gate control CW_TEST_SET_UNRECORDED records it) */
+  uint32_t set_calls;        /* actions set by cw_input_set_action and friends (debug field input.set_calls) */
   /* prompts (cartwheel/prompt.h): presentation only, never part of a snapshot or the stream hash */
   uint8_t prompt_last[CW_INPUT_MAX_PLAYERS];  /* cw_prompt_device each player used last (NONE: nothing yet) */
   uint8_t prompt_force[CW_INPUT_MAX_PLAYERS]; /* cw_prompt_force_device / CW_TEST_PROMPT_DEVICE (NONE: not forced) */
@@ -104,6 +113,8 @@ uint32_t cw__snapshot_hash(const cw__snapshot *s, int count, uint32_t h);
 /* replay.c */
 void cw__input_register_commands(void); /* the debug channel's record command */
 void cw__input_record_tick(const cw__snapshot *s);
+void cw__input_tick_close(void); /* input.c: hash (and record) the open tick */
+bool cw__input_record_skip_set(void); /* replay.c: the gate control CW_TEST_SET_UNRECORDED (set actions left out of the recording) */
 bool cw__input_replay_next(void); /* fills cw__in.tick_replay; false when no replay is running */
 void cw__input_replay_free(void);
 

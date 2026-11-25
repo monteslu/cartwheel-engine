@@ -2,6 +2,7 @@
  * game (a scrolling brawler, a co-op platformer) gets one view, and every player's rect is the whole canvas.
  * Each shared check is paired with the same call without the option, which must give the other answer: a
  * shell that ignored shared_screen cannot pass both halves. */
+#include "cartwheel/input.h"
 #include "cartwheel/pipeline.h"
 #include "cartwheel/render3d.h"
 #include "cartwheel/shell.h"
@@ -169,10 +170,95 @@ static void test_join_seats(void) {
   }
 }
 
+
+/* CPU seats: cw_shell_start_seats seats people on pads in order (the first also on the keyboard) and CPUs on no device;
+ * cw_shell_seat_cpu answers per seat; a plain start has no CPU. */
+static void test_cpu_seats(void) {
+  cw_shell_init(&(cw_shell_desc){ .title = "t", .max_players = 4, .cpu_seats = true });
+  int cpu[4] = { -1, CW_SHELL_CPU_HARD, -1, CW_SHELL_CPU_EASY };
+  cw_shell_start_seats(4, cpu);
+  CHECK_EQ_INT(cw_shell_players(), 4);
+  cw_shell_cpu_level lv = CW_SHELL_CPU_NORMAL;
+  CHECK(!cw_shell_seat_cpu(0, &lv) && lv == CW_SHELL_CPU_NORMAL); /* a person: false, level untouched */
+  CHECK(cw_shell_seat_cpu(1, &lv) && lv == CW_SHELL_CPU_HARD);
+  CHECK(!cw_shell_seat_cpu(2, NULL));
+  CHECK(cw_shell_seat_cpu(3, &lv) && lv == CW_SHELL_CPU_EASY);
+  CHECK(cw_shell_seat_cpu(3, NULL));
+  CHECK(!cw_shell_seat_cpu(4, NULL) && !cw_shell_seat_cpu(-1, NULL));
+  for (int i = 0; i < 4; i++) CHECK(cw_shell_seat_taken(i)); /* a CPU's seat is taken */
+  CHECK_EQ_INT(cw_input_player_pad(0), 0);
+  CHECK_EQ_INT(cw_input_player_pad(1), -1);
+  CHECK_EQ_INT(cw_input_player_pad(2), 1); /* the second person, the second pad */
+  CHECK_EQ_INT(cw_input_player_pad(3), -1);
+  CHECK(cw_input_player_devices(0) & CW_DEVICE_KEYBOARD);
+  CHECK_EQ_INT(cw_input_player_devices(1), 0);
+  CHECK_EQ_INT(cw_input_player_devices(3), 0);
+  /* a CPU on seat 0: the keyboard goes to the first person */
+  int cpu0[2] = { CW_SHELL_CPU_NORMAL, -1 };
+  cw_shell_start_seats(2, cpu0);
+  CHECK_EQ_INT(cw_input_player_pad(1), 0);
+  CHECK(cw_input_player_devices(1) & CW_DEVICE_KEYBOARD);
+  CHECK_EQ_INT(cw_input_player_devices(0), 0);
+  /* a plain start, and NULL: no CPU */
+  cw_shell_start(3);
+  for (int i = 0; i < 4; i++) CHECK(!cw_shell_seat_cpu(i, NULL));
+  cw_shell_start_seats(2, NULL);
+  CHECK(!cw_shell_seat_cpu(0, NULL) && !cw_shell_seat_cpu(1, NULL) && cw_shell_players() == 2);
+  CHECK(!strcmp(cw_shell_cpu_level_label(CW_SHELL_CPU_EASY), "Easy") && !strcmp(cw_shell_cpu_level_label(CW_SHELL_CPU_HARD), "Hard"));
+  CHECK(!strcmp(cw_shell_cpu_level_label((cw_shell_cpu_level)7), "?"));
+  cw_shell_to_title();
+}
+
+/* Hot seats: eight seats, two people on pads and six hot seats; the turn hands the free pads (and the keyboard, which no
+ * pad seat holds here... the first pad person does) to the hot seat whose turn it is and nobody else. */
+static void test_hot_seats(void) {
+  cw_shell_init(&(cw_shell_desc){ .title = "t", .max_players = 8, .hot_seats = true, .cpu_seats = true });
+  int kind[8] = { CW_SHELL_SEAT_HOT, CW_SHELL_SEAT_PAD, CW_SHELL_SEAT_HOT, CW_SHELL_SEAT_HOT, CW_SHELL_CPU_HARD, CW_SHELL_SEAT_HOT,
+                  CW_SHELL_SEAT_HOT, CW_SHELL_SEAT_HOT };
+  cw_shell_start_seats(8, kind);
+  CHECK_EQ_INT(cw_shell_players(), 8);
+  CHECK(cw_shell_seat_hot(0) && !cw_shell_seat_hot(1) && !cw_shell_seat_hot(4) && cw_shell_seat_hot(7));
+  for (int i = 0; i < 8; i++) CHECK(cw_shell_seat_taken(i));
+  CHECK_EQ_INT(cw_input_player_pad(1), 0); /* the person on a pad has pad 0 and the keyboard */
+  CHECK(cw_input_player_devices(1) & CW_DEVICE_KEYBOARD);
+  CHECK_EQ_INT(cw_shell_turn(), -1);
+  for (int i = 0; i < 8; i++)
+    if (cw_shell_seat_hot(i)) CHECK_EQ_INT((int)cw_input_player_pads(i), 0); /* nobody's turn: no hot seat reads */
+  cw_shell_set_turn(3);
+  CHECK_EQ_INT(cw_shell_turn(), 3);
+  CHECK_EQ_INT((int)cw_input_player_pads(3), 0xE); /* pads 1..3: every pad but the pad person's */
+  CHECK_EQ_INT((int)cw_input_player_devices(3), 0); /* the keyboard is the pad person's */
+  CHECK_EQ_INT((int)cw_input_player_pads(0), 0);
+  CHECK_EQ_INT((int)cw_input_player_pads(1), 1);
+  cw_shell_set_turn(4); /* a CPU's turn: no hot seat reads */
+  for (int i = 0; i < 8; i++)
+    if (cw_shell_seat_hot(i)) CHECK_EQ_INT((int)cw_input_player_pads(i), 0);
+  cw_shell_set_turn(7);
+  CHECK_EQ_INT((int)cw_input_player_pads(7), 0xE);
+  CHECK_EQ_INT((int)cw_input_player_pads(3), 0);
+  cw_shell_set_turn(9); /* out of range: nobody */
+  CHECK_EQ_INT(cw_shell_turn(), -1);
+  /* all hot seats: the keyboard follows the turn too */
+  int all[3] = { CW_SHELL_SEAT_HOT, CW_SHELL_SEAT_HOT, CW_SHELL_SEAT_HOT };
+  cw_shell_start_seats(3, all);
+  cw_shell_set_turn(1);
+  CHECK_EQ_INT((int)cw_input_player_pads(1), 0xF);
+  CHECK(cw_input_player_devices(1) & CW_DEVICE_KEYBOARD);
+  CHECK_EQ_INT((int)cw_input_player_devices(0), 0);
+  cw_shell_to_title();
+  /* a match of more than four seats is one view */
+  cw_shell_start_seats(8, kind);
+  cw_r2d_begin(NULL);
+  cw_vec2 sz = cw_r2d_canvas_size();
+  cw_r2d_end();
+  CHECK(same_rect(cw_shell_player_rect(5), cw_rect_make(0, 0, sz.x, sz.y)));
+  cw_shell_to_title();
+}
+
 /* reads the gate's switches (CW_TEST_NO_SHARED, CW_TEST_OLD_SEATS): runs at frame 2, when every host has them */
 void cw_test_late(void) {
   test_shared_and_split();
   test_join_seats();
 }
 CW_TEST_SUITE("shell", { "one player", test_one_player },
-              { "screen shake setting", test_screen_shake }, { "text settings", test_text_settings });
+              { "screen shake setting", test_screen_shake }, { "text settings", test_text_settings }, { "cpu seats", test_cpu_seats }, { "hot seats", test_hot_seats });

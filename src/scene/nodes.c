@@ -157,6 +157,24 @@ static void node3d_pre_render(cw_node n, void *data, double alpha) {
   write_object(data, alpha);
 }
 
+/* every Node3D's three.c object under (and at) n written from its node as it stands (no interpolation), as the next
+ * pre_render writes them: picking reads the world as the game left it this tick (src/scene/pick3d.c). visit (may be
+ * NULL) sees each Node3D and its object. */
+typedef struct sync_ctx { void (*visit)(cw_node n, t3_object *o, void *u); void *u; } sync_ctx;
+static bool sync_visit(cw_node n, void *u) {
+  sync_ctx *c = u;
+  cw_node3d *d = cw_node_data_t(n, node3d_t);
+  if (d) {
+    write_object(d, 1.0);
+    if (c->visit && d->object) c->visit(n, d->object, c->u);
+  }
+  return true;
+}
+void cw__node3d_sync_objects(cw_node n, void (*visit)(cw_node n, t3_object *o, void *u), void *u) {
+  sync_ctx c = { visit, u };
+  cw_node_walk(n, sync_visit, &c);
+}
+
 void cw_node3d_snapshot(cw_node n) {
   cw_node3d *d = cw_node_data_t(n, node3d_t);
   if (!d) return;

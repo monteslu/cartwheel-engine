@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "cartwheel/core.h"
+#include "cartwheel/debug.h"
 #include "input_internal.h"
 
 #define I cw__in
@@ -21,6 +22,7 @@ typedef CW_ARRAY(uint8_t) bytes;
 
 static struct {
   bool on;
+  bool skip_set; /* CW_TEST_SET_UNRECORDED (read at record_begin): the gate control, actions the game set are not recorded */
   int count; /* actions at record_begin */
   bytes header, body, out;
   uint32_t idle, ticks, hash;
@@ -53,7 +55,10 @@ void cw_input_record_begin(void) {
   cw__input_ensure_init();
   cw_array_clear(&rec.header);
   cw_array_clear(&rec.body);
+  I.tick_rec = false; /* a tick still open (record_begin inside fixed_update) is not this recording's: it starts at the next */
   rec.on = true;
+  rec.skip_set = cw_test_env("CW_TEST_SET_UNRECORDED") != NULL;
+  if (rec.skip_set) cw_warn("input: CW_TEST_SET_UNRECORDED: actions the game sets are left out of this recording (a gate control)");
   rec.count = I.count;
   rec.idle = rec.ticks = 0;
   rec.hash = CW_HASH32_INIT;
@@ -70,13 +75,16 @@ void cw_input_record_begin(void) {
   }
 }
 
+/* a tick open when the recording ends (record_end inside fixed_update) is still recorded when it closes, with what the
+ * game sets in the rest of it: it began while recording */
 void cw_input_record_end(void) { rec.on = false; }
+bool cw__input_record_skip_set(void) { return rec.skip_set; }
 bool cw_input_recording_active(void) { return rec.on; }
 uint32_t cw_input_record_ticks(void) { return rec.ticks; }
 uint32_t cw_input_record_hash(void) { return rec.hash; }
 
 void cw__input_record_tick(const cw__snapshot *s) {
-  if (!rec.on) return;
+  if (!rec.header.count) return;
   rec.ticks++;
   rec.hash = cw__snapshot_hash(s, rec.count, rec.hash);
   uint32_t n = 0;
@@ -165,8 +173,8 @@ bool cw_input_replay_begin(const uint8_t *data, size_t len) {
     return false;
   }
   int players = data[5], count = data[6];
-  if (players != CW_INPUT_MAX_PLAYERS || count > CW_INPUT_MAX_ACTIONS) {
-    cw_error("input replay: recorded with %d players / %d actions; this build has %d / %d", players, count,
+  if (players < 1 || players > CW_INPUT_MAX_PLAYERS || count > CW_INPUT_MAX_ACTIONS) { /* a 4-player recording plays on 8 */
+    cw_error("input replay: recorded with %d players / %d actions; this build has at most %d / %d", players, count,
              CW_INPUT_MAX_PLAYERS, CW_INPUT_MAX_ACTIONS);
     return false;
   }

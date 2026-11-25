@@ -1,7 +1,8 @@
 /* The input module driven directly (cw_input_frame_begin / tick_begin /
  * ticks_end) with synthetic raw input: the tick-vs-frame edge cases a host
  * cannot script (a press inside one frame's event batch, frames with no
- * tick), deadzones, vectors, text bindings, capture, touch and replay. */
+ * tick), deadzones, vectors, text bindings, capture, touch, replay and actions
+ * the game sets for a CPU seat (with the control CW_TEST_SET_UNRECORDED). */
 #include <string.h>
 
 #include "cartwheel/aim.h"
@@ -586,6 +587,202 @@ static void test_record_replay(void) {
   CHECK(!cw_input_replay_begin(junk, sizeof junk));
 }
 
+
+/* ── actions set by the game (cw_input_set_action, _actions, _vector) ── */
+
+static void test_set_actions(void) {
+  fresh();
+  const char *b = "place = pad:south\nleft = axis:lx-\nright = axis:lx+\nup = axis:ly-\ndown = axis:ly+\n";
+  CHECK(cw_input_load_bindings(b, strlen(b)));
+  cw_action place = cw_action_find("place"), left = cw_action_find("left"), right = cw_action_find("right"),
+            up = cw_action_find("up"), down = cw_action_find("down");
+  cw_input_assign(1, -1, 0); /* a CPU seat: no devices */
+  /* outside a tick: refused */
+  CHECK(!cw_input_set_action(1, place, 1));
+  cw_input_frame_begin(&raw);
+  cw_input_tick_begin();
+  CHECK(!cw_input_set_action(CW_INPUT_MAX_PLAYERS, place, 1)); /* no such player */
+  CHECK(!cw_input_set_action(1, 63, 1));    /* no such action */
+  CHECK(cw_input_set_action(1, place, 1));
+  CHECK(cw_action_pressed(1, place) && cw_action_just_pressed(1, place) && cw_action_strength(1, place) == 1);
+  CHECK(!cw_action_pressed(0, place)); /* another seat is untouched */
+  cw_input_ticks_end();
+  CHECK(!cw_action_pressed(1, place)); /* the frame snapshot is the devices' (none) */
+  /* the next tick: set again = held (not just pressed); then not set = released */
+  cw_input_frame_begin(&raw);
+  cw_input_tick_begin();
+  CHECK(!cw_action_pressed(1, place)); /* each tick starts from the devices */
+  cw_input_set_action(1, place, 1);
+  CHECK(cw_action_pressed(1, place) && !cw_action_just_pressed(1, place));
+  cw_input_tick_begin();
+  CHECK(!cw_action_pressed(1, place) && cw_action_just_released(1, place));
+  /* below the dead zone: a strength, not a press */
+  cw_input_set_action(1, place, 0.3f);
+  CHECK(!cw_action_pressed(1, place) && cw_action_raw_strength(1, place) > 0.29f);
+  /* a whole seat: everything else released */
+  cw_input_set_action(1, right, 1);
+  cw_action_value v[1] = { { place, 1 } };
+  CHECK(cw_input_set_actions(1, v, 1));
+  CHECK(cw_action_pressed(1, place) && !cw_action_pressed(1, right));
+  CHECK(cw_input_set_actions(1, NULL, 0));
+  CHECK(!cw_action_pressed(1, place));
+  /* a stick: the vector reads back */
+  CHECK(cw_input_set_vector(1, left, right, up, down, (cw_vec2){ -0.6f, 0.8f }));
+  cw_vec2 back = cw_input_vector(1, left, right, up, down, CW_DEADZONE_RADIAL, 0.1f);
+  CHECK(back.x > -0.601f && back.x < -0.599f && back.y > 0.799f && back.y < 0.801f);
+  cw_input_set_vector(1, left, right, up, down, (cw_vec2){ 3, 4 }); /* cut to length 1 */
+  back = cw_input_vector(1, left, right, up, down, CW_DEADZONE_RADIAL, 0.1f);
+  CHECK(back.x > 0.599f && back.x < 0.601f && back.y > 0.799f && back.y < 0.801f);
+  /* overrides a seat's device too (a pad held down, the game sets it up) */
+  raw.pads[0].buttons = 1u << CW_PAD_SOUTH;
+  cw_input_ticks_end();
+  cw_input_frame_begin(&raw);
+  cw_input_tick_begin();
+  CHECK(cw_action_pressed(0, place));
+  cw_input_set_action(0, place, 0);
+  CHECK(!cw_action_pressed(0, place) && !cw_action_just_pressed(0, place) && !cw_action_just_released(0, place)); /* the tick before it was up */
+  cw_input_ticks_end();
+  raw.pads[0].buttons = 0;
+  /* a tick is hashed when it ends: what was set is in the hash */
+  fresh();
+  cw_input_load_bindings(b, strlen(b));
+  uint32_t h0 = cw_input_stream_hash();
+  cw_input_frame_begin(&raw);
+  cw_input_tick_begin();
+  cw_input_ticks_end();
+  uint32_t plain = cw_input_stream_hash();
+  CHECK(plain != h0);
+  fresh();
+  cw_input_load_bindings(b, strlen(b));
+  cw_input_frame_begin(&raw);
+  cw_input_tick_begin();
+  cw_input_set_action(2, cw_action_find("place"), 1);
+  cw_input_ticks_end();
+  CHECK(cw_input_stream_hash() != plain);
+}
+
+/* A game where three CPU seats play through set actions next to a person on a pad: recorded, then replayed with the
+ * CPU code still running (its sets refused) and with no CPU code at all; both end in the same state with the same
+ * hashes. Late: CW_TEST_SET_UNRECORDED (read at record_begin, which a cart host delivers from frame 2) is the control,
+ * the CPUs' actions left out of the recording: the replays then lose the CPUs' moves and must not match. */
+typedef struct { int32_t pos[4], score[4]; } toy;
+static void toy_tick(toy *g, cw_rng *think, bool cpus, int nt) {
+  cw_action place = cw_action_find("place"), left = cw_action_find("left"), right = cw_action_find("right");
+  if (cpus)
+    for (int p = 1; p < 4; p++) { /* a CPU decides from the state, with a seeded mistake now and then */
+      int want = (g->score[(p + 1) % 4] + nt) % 7 - 3;
+      bool slip = cw_rng_int(think, 0, 9) == 0;
+      cw_action_value v[2] = { { want < g->pos[p] ? left : right, slip ? 0.2f : 1.0f }, { place, (nt + p) % 5 == 0 ? 1.0f : 0.0f } };
+      cw_input_set_actions(p, v, want == g->pos[p] ? 0 : 2);
+    }
+  for (int p = 0; p < 4; p++) { /* the rules read every seat the same way */
+    if (cw_action_just_pressed(p, right)) g->pos[p]++;
+    if (cw_action_just_pressed(p, left)) g->pos[p]--;
+    if (cw_action_just_pressed(p, place)) g->score[p] += g->pos[p] * (p + 1);
+  }
+}
+static uint32_t toy_run(bool record, const uint8_t *replay, size_t replay_len, bool cpus, toy *out) {
+  fresh();
+  const char *b = "place = pad:south\nleft = axis:lx-\nright = axis:lx+\n";
+  cw_input_load_bindings(b, strlen(b));
+  for (int p = 1; p < 4; p++) cw_input_assign(p, -1, 0);
+  if (record) cw_input_record_begin();
+  if (replay) cw_input_replay_begin(replay, replay_len);
+  toy g = { 0 };
+  cw_rng pad, think;
+  cw_rng_seed(&pad, 77);
+  cw_rng_seed(&think, 99);
+  int nt = 0;
+  for (int f = 0; f < 600; f++) {
+    if (!replay) { /* the person: a pad, live */
+      raw.pads[0].buttons = cw_rng_int(&pad, 0, 6) == 0 ? 1u << CW_PAD_SOUTH : 0;
+      raw.pads[0].axes[CW_AXIS_LX] = (float)cw_rng_int(&pad, -1, 1);
+    }
+    cw_input_frame_begin(&raw);
+    int ticks = f % 3 == 2 ? 2 : 1;
+    for (int t = 0; t < ticks; t++, nt++) {
+      cw_input_tick_begin();
+      toy_tick(&g, &think, cpus, nt);
+    }
+    cw_input_ticks_end();
+  }
+  if (record) cw_input_record_end();
+  *out = g;
+  return cw_hash32(&g, sizeof g, CW_HASH32_INIT);
+}
+
+void cw_test_late(void) {
+  toy live, again, bare;
+  uint32_t live_h = toy_run(true, NULL, 0, true, &live);
+  uint32_t rec_hash = cw_input_record_hash(), stream = cw_input_stream_hash();
+  size_t len;
+  const uint8_t *r = cw_input_recording(&len);
+  uint8_t *copy = cw_alloc(len, CW_MEM_GENERAL);
+  memcpy(copy, r, len);
+  int moved = 0;
+  for (int p = 1; p < 4; p++) moved += live.score[p] != 0;
+  CHECK_EQ_INT(moved, 3); /* the CPUs really played */
+  uint32_t again_h = toy_run(false, copy, len, true, &again); /* the CPU code runs, the recording decides */
+  CHECK(again_h == live_h);
+  CHECK(cw_input_replay_hash() == rec_hash);
+  CHECK(cw_input_stream_hash() == stream);
+  uint32_t bare_h = toy_run(false, copy, len, false, &bare); /* no CPU code at all: the recording alone plays them */
+  CHECK(bare_h == live_h);
+  CHECK(cw_input_stream_hash() == stream);
+  cw_free(copy);
+  FOLD(live_h);
+  FOLD(rec_hash);
+}
+
+/* eight players over four pads: a player reading several pads, and a pad passed to another player with its button
+ * held, which the new player must not see as a press (a hot seat's turn) */
+static void test_pad_routing(void) {
+  fresh();
+  const char *b = "place = pad:south\nright = axis:lx+\n";
+  CHECK(cw_input_load_bindings(b, strlen(b)));
+  cw_action place = cw_action_find("place"), right = cw_action_find("right");
+  CHECK_EQ_INT(CW_INPUT_MAX_PLAYERS, 8);
+  CHECK_EQ_INT(cw_input_player_pad(5), -1); /* players past the pads have none by default */
+  raw.pads[2].connected = raw.pads[3].connected = true;
+  for (int p = 0; p < 8; p++) cw_input_assign(p, -1, 0);
+  cw_input_assign_pads(6, (1u << 2) | (1u << 3), 0); /* player 6 reads pads 2 and 3 */
+  CHECK_EQ_INT((int)cw_input_player_pads(6), 12);
+  CHECK_EQ_INT(cw_input_player_pad(6), 2);
+  raw.pads[3].axes[CW_AXIS_LX] = 0.7f;
+  raw.pads[2].axes[CW_AXIS_LX] = 0.3f;
+  run_frame(place, 1);
+  CHECK(cw_action_raw_strength(6, right) > 0.69f && cw_action_raw_strength(6, right) < 0.71f); /* the strongest */
+  CHECK(cw_action_raw_strength(2, right) == 0);
+  raw.pads[2].axes[CW_AXIS_LX] = raw.pads[3].axes[CW_AXIS_LX] = 0;
+  /* the press that ends player 6's turn, held while the pads pass to player 7 */
+  raw.pads[2].buttons = raw.pads[2].pressed = 1u << CW_PAD_SOUTH;
+  seen a = run_frame(place, 1);
+  CHECK_EQ_INT(a.jp, 0); /* player 0 holds nothing */
+  cw_input_assign_pads(6, 0, 0);
+  cw_input_assign_pads(7, (1u << 2) | (1u << 3), 0);
+  int jp7 = 0, held7 = 0, jp6 = 0;
+  for (int i = 0; i < 3; i++) { /* still held three frames */
+    cw_input_frame_begin(&raw);
+    cw_input_tick_begin();
+    jp7 += cw_action_just_pressed(7, place);
+    held7 += cw_action_pressed(7, place);
+    jp6 += cw_action_just_pressed(6, place);
+    cw_input_ticks_end();
+    raw.pads[2].pressed = 0;
+  }
+  CHECK_EQ_INT(jp7, 0);   /* held, never pressed by player 7 */
+  CHECK_EQ_INT(held7, 3);
+  CHECK_EQ_INT(jp6, 0);
+  raw.pads[2].buttons = 0;
+  run_frame(place, 1);
+  raw.pads[2].buttons = raw.pads[2].pressed = 1u << CW_PAD_SOUTH; /* a new press is player 7's */
+  cw_input_frame_begin(&raw);
+  cw_input_tick_begin();
+  CHECK(cw_action_just_pressed(7, place) && !cw_action_pressed(6, place));
+  cw_input_ticks_end();
+  raw.pads[2].buttons = raw.pads[2].pressed = 0;
+}
+
 static void test_aim(void) {
   cw_aim_curve c = cw_aim_curve_default();
   cw_aim_state st = { 0 };
@@ -619,4 +816,4 @@ static void test_aim(void) {
 
 CW_TEST_SUITE("input", { "tick_latch", test_tick_latch }, { "strength_vector", test_strength_and_vector },
               { "players", test_players }, { "text", test_text }, { "capture", test_capture },
-              { "touch", test_touch }, { "thumbstick", test_thumbstick }, { "rect_stick_home", test_rect_stick_home }, { "record_replay", test_record_replay }, { "aim", test_aim })
+              { "touch", test_touch }, { "thumbstick", test_thumbstick }, { "rect_stick_home", test_rect_stick_home }, { "record_replay", test_record_replay }, { "set_actions", test_set_actions }, { "pad_routing", test_pad_routing }, { "aim", test_aim })

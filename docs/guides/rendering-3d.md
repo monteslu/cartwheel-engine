@@ -78,7 +78,7 @@ Texture filtering is the same on GL and WebGPU. A texture's `anisotropy` (1 by d
 
 | Node | What it configures |
 |---|---|
-| `Camera3D` | fov, near, far; the first `current` camera renders |
+| `Camera3D` | `projection` PERSPECTIVE (`fov`) or ORTHOGONAL (`size`), near, far; the first `current` camera renders |
 | `MeshInstance3D` | a primitive (BOX, SPHERE, PLANE, CYLINDER) scaled to `size`, or a `mesh` resource; material colour, metalness, roughness, emissive; `shading` STANDARD or TOON; shadows; visibility and baking properties |
 | `DirectionalLight3D`, `OmniLight3D`, `SpotLight3D` | colour, energy, range, decay, cone, shadows, strength in volumetric fog |
 | `WorldEnvironment` | background, ambient and hemisphere light, three.c fog |
@@ -1243,6 +1243,58 @@ For bullet holes and footprints, spawn decals and forget them: give each a `max_
 The cut is the same on every host, bit for bit, so a replay or a networked game shows every hole in the same place.
 
 Samples: `samples/fx_particles` (a fountain colliding with depth, sparks, sorted smoke, mesh debris, an attracted ring, mesh-surface emission, a Trail3D ribbon), `samples/fx_collide` (particles coming to rest on a table they can see), `samples/fx_decals` (scorch over steps, an arrow over a ramp, cracks wrapping a sphere, sheet splats, 240 culled splats), `samples/decal_walls` (about two hundred stains from one sheet on the faces of a side-on cliff, through the full post stack; GL and WebGPU draw the same picture), `samples/fx_mesh_decals` (mesh mode: a badge and paint on a walking character, a crack on a glass pane, a glow on a spinning crate, pooled bullet holes; `fx_mesh_decals_lit` is the same scene under clustered lighting), `samples/fx_lit_decals` (stickers in the dark, under a lamp and in the sun, and badges on two characters).
+
+## Orthographic cameras
+
+A Camera3D with `projection = ORTHOGONAL` draws things the same size at every distance: a board seen square on, a map, an isometric view. `size` is the height of the view in metres; its width is `size` times the view's aspect, so a split-screen half shows the same height as the whole screen. `fov` is unused. Nothing else changes: lights, shadows, fog and the post chain draw as they do through a perspective camera, and no program state is added (the projection is a matrix, not a shader variant). Switch it at any time; the next frame draws with it.
+
+```text
+[node name="Camera" parent="." type="Camera3D"]
+projection = ORTHOGONAL
+size = 9
+position = vec3(0, 7.5, 6.5)
+```
+
+## Picking and projection
+
+`cartwheel/pick3d.h` ([reference](header:pick3d.h)) answers the two questions a board game, a strategy game or an editor asks of its 3D view: which piece is under the mouse or the finger, and where on the screen is this 3D point (for a label over a piece, a tooltip, a 2D marker). Both match the picture: the lens is the camera's own (`fov` or `size`, near and far) at the aspect of the rectangle its picture fills, perspective or orthographic.
+
+A view is a camera and that rectangle in canvas pixels (top left origin, y down, as the 2D side and the pointer have them). [cw_canvas_views3d](api:cw_canvas_views3d) lists the canvas's views as the pipeline draws them: the split-screen views of [cw_shell_split](api:cw_shell_split) or [cw_pipeline_set_views](api:cw_pipeline_set_views) with their rectangles (the same as [cw_shell_player_rect](api:cw_shell_player_rect)), else the current camera over the whole canvas. [cw_canvas_view3d_at](api:cw_canvas_view3d_at) gives the view under a point, and [cw_subviewport_view3d](api:cw_subviewport_view3d) a SubViewport's camera with the rectangle of its own pixels.
+
+| Call | Gives |
+|---|---|
+| [cw_camera3d_world_to_screen](api:cw_camera3d_world_to_screen) | a world point's place in a view, and its depth in front of the camera (0 or less: behind it) |
+| [cw_camera3d_screen_to_world](api:cw_camera3d_screen_to_world) | the point under a screen place at a depth (the inverse) |
+| [cw_camera3d_screen_ray](api:cw_camera3d_screen_ray) | the ray under a screen place |
+| [cw_pick3d_ray](api:cw_pick3d_ray) | the nodes a world ray hits, nearest first |
+| [cw_pick3d_screen](api:cw_pick3d_screen) | the same through a camera and a place in its view |
+| [cw_pick3d_canvas](api:cw_pick3d_canvas) | the same through whichever view is under a canvas point (split screen picks in that player's picture) |
+
+`samples/board_pick` lifts the piece under a click. The pointer comes from the window into canvas pixels as on the 2D side:
+
+@include samples/board_pick/main.c#pick_point
+
+then the pick, in the pieces' group so a piece built of a body and a head is one hit:
+
+@include samples/board_pick/main.c#pick_hit
+
+A hit ([cw_pick3d_hit](api:cw_pick3d_hit)) has the node (the nearest node owning the mesh, or the group member), the three.c mesh, the instance of a MultiMeshInstance3D (its buffer index) or InstancedMesh, the triangle, the distance, the world point and the triangle's own normal turned toward the viewer (to place a marker flat on whatever was hit). The filter ([cw_pick3d_filter](api:cw_pick3d_filter)) narrows it: `layers` (a cursor marker on its own render layer is never picked), `group`, `all` for every hit along the ray, `max_distance`, `hidden` to include hidden nodes, `exclude` for a subtree (the piece being dragged).
+
+What is tested: every mesh and every instance of an instanced one, triangle by triangle as three.js r187's Raycaster does, a material's `side` deciding whether back faces count. Skinned meshes, lines, points and sprites are not: give an animated character an invisible proxy mesh on a layer of its own and pick that layer. Picks read the nodes as they stand when called, so a piece moved this tick is hit where it now is with no frame drawn in between; a MeshInstance3D added this tick has no mesh until the next frame's pre_render builds it, and a MultiMeshInstance3D's instances are the ones its last frame took.
+
+The board_pick gates click pieces under a perspective camera, an orthographic camera and in split screen (`board-pick`, `board-pick-ortho`, `board-pick-split`); their control moves the pointer's ray 60 pixels aside, and the picks miss. `unit-pick3d` checks the projection against places worked out by hand from each lens.
+
+## Coplanar faces
+
+Two faces in one plane that face the same way and overlap, one of them writing depth, have no depth order: the depth test takes one or the other pixel by pixel, differently as the camera moves, so the picture swaps between their looks in speckles and stripes (z-fighting). Board games make them all the time: a printed square laid on a board, a card on a card, a token on a tile. `cartwheel/coplanar.h` ([reference](header:coplanar.h)) finds them ([cw_coplanar_scan](api:cw_coplanar_scan), by region of the scene) and lays them apart where the still world is built ([cw_coplanar_separate](api:cw_coplanar_separate)): faces move as whole patches by a step the depth buffer can tell apart, the smaller patch (the detail on what it lies on) in front, and walls meeting a moved patch stretch to it so nothing cracks. Two faces with the same look where they overlap do not count, since whichever wins the pixel is the same.
+
+MeshInstance3D primitives share one unit shape per tree, and two copies of one geometry cannot be moved apart by moving the geometry. [cw_coplanar_separate_ex](api:cw_coplanar_separate_ex) with `CW_COPLANAR_UNSHARE` first gives each mesh drawing a shared geometry its own copy (they then draw as separate meshes, not one instanced batch):
+
+@include samples/board_pick/main.c#coplanar
+
+Call it once the meshes exist (the first frame's pre_render builds MeshInstance3D meshes) and again after the board changes; a piece that moves during play is placed a step above what it rests on by the game. [cw_coplanar_set_plane_tol](api:cw_coplanar_set_plane_tol) says how near two planes must be to count (a table a metre from the eye resolves far finer than the default 1 mm), [cw_coplanar_set_view](api:cw_coplanar_set_view) sets it from the depth buffer's own limit for a camera that sees far. [cw_coplanar_init](api:cw_coplanar_init) adds the debug request `coplanar` (the scan of the running scene as JSON, by region; `coplanar selftest`) and the debug fields `level.coplanar_pairs` and `level.coplanar_moved`.
+
+The `board-coplanar` gate reads back the middle of a three-card stack and finds only the top card's colour; its control (`COPLANAR_SEPARATE=0`, the board left as built) finds the cards fighting through each other in most of those pixels.
 
 ## The showcase
 

@@ -27,6 +27,8 @@ cw_add_app(toon_shading SOURCES toon_shading/main.c PACK ${CMAKE_CURRENT_SOURCE_
 cw_add_app(texture_filtering SOURCES texture_filtering/main.c)
 # the game shell's join screen opened during a match: seats added and dropped between rounds
 cw_add_app(shell_join SOURCES shell_join/main.c)
+# a hex board game for people and CPUs: hex grids (cartwheel/hex.h), CPU seats on the join screen, CPUs pressing actions (cw_input_set_actions) recorded and replayed
+cw_add_app(hex_board SOURCES hex_board/main.c)
 # the same with two seats and a start that takes about 300 ms
 cw_add_app(shell_join_slow SOURCES shell_join/main.c)
 target_compile_definitions(shell_join_slow PRIVATE SHELL_JOIN_SEATS=2 SHELL_JOIN_START_WORK=300000000u)
@@ -337,6 +339,9 @@ cw_add_app(fog_transparents SOURCES fog_transparents/main.c ASSETS ${CMAKE_CURRE
 # split screen in one pass (cw_pipeline_set_views_array): terrain, scatter, sky, fog, water, lamps, particles, a
 # decal and SSAO in two or four views over one target (tests/views-array.mjs).
 cw_add_app(split_array SOURCES split_array/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/split_array/assets)
+# a board game's table: 3D picking under a perspective, an orthographic and a split-screen camera (cartwheel/pick3d.h), two
+# players' cursors hopping between the squares (cursor.h), squares and cards laid apart off the board's plane (coplanar.h)
+cw_add_app(board_pick SOURCES board_pick/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/board_pick/assets)
 cw_add_app(split_views SOURCES split_views/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/split_views/assets)
 # clustered lighting: a night street with 214 clustered lights and shadowed floodlights (cartwheel/lighting.h).
 cw_add_app(night_street SOURCES night_street/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/night_street/assets)

@@ -48,6 +48,29 @@
  * after that frame, so a start that loads for a long time comes after a
  * picture. cw_shell_start skips this: it calls the hook at once.
  *
+ * CPU seats (cw_shell_desc.cpu_seats): the join screen also offers each seat to a computer player at Easy, Normal or
+ * Hard. Left / right (ui_left, ui_right) move a frame from seat to seat and up / down (ui_up, ui_down) step the framed
+ * seat: empty, CPU Easy, Normal, Hard and round; a tap or a click on a seat no person holds steps it the same way, and a
+ * tap anywhere else plays as before. A person who joins takes an empty seat, else the first CPU's. The CPUs set are
+ * saved (in the shell's save block, with the settings) and are on their seats the next time the join screen opens. In
+ * the match a CPU seat is a player like the others (it counts in cw_shell_players and cw_shell_seat_taken) with no
+ * device (cw_input_assign(seat, -1, 0)); cw_shell_seat_cpu says which seats are CPUs and at what level, and the game
+ * drives them through the input path people use, cw_input_set_actions in fixed_update (cartwheel/input.h), so the
+ * recording, a replay and the input hash carry their moves. Seats keep their order: a CPU set on seat 2 with people on
+ * seats 1 and 4 plays as player 1 of 0..2. Debug fields shell.seat_cpu (eight, -1 or the level), shell.join_kind (eight,
+ * the join screen's: 0 none, 1 a hot seat, 2 + level a CPU) and shell.join_cursor. A match of more than four seats is
+ * one shared view (cw_shell_split, cw_shell_player_rect).
+ *
+ * Hot seats (cw_shell_desc.hot_seats): seats for people who take turns on the pads, up to CW_SHELL_MAX_SEATS (eight)
+ * whatever the pad count, for a turn-based game. On the join screen up / down step the framed seat through empty, a
+ * hot seat ("pass the pad", named and coloured by seat_names and seat_colors) and, with cpu_seats, the CPU levels;
+ * more than four seats draw in two rows. A pad that joins with South still takes a seat of its own; Start plays without
+ * seating a pad when hot seats are set. In the match the game says whose turn it is with cw_shell_set_turn(seat): the
+ * pads no seat holds (and the keyboard, mouse and touch unless a seat holds them) drive that hot seat and no other, so
+ * one pad passed round plays all eight; a button still held when the turn passes is not the next seat's press. On a
+ * CPU's or a pad seat's turn the hot seats read nothing; Start on a free pad opens the pause menu on any turn, and under
+ * the menus the free pads drive them. Debug fields shell.seat_hot (eight, 0 or 1) and shell.turn.
+ *
  * Split screen: cw_shell_split lays one view per player out with the
  * pipeline (cw_pipeline_split: two side by side, three and four in quadrants,
  * three leaving the fourth quadrant for a shared HUD); cw_shell_player_rect
@@ -108,6 +131,16 @@ typedef struct cw_shell_setting {
  * save as a struct (game_save_size) and has a saved row: that struct can be at most CW_SHELL_GAME_SAVE_MAX minus this. */
 #define CW_SHELL_SETTINGS_SAVE_BYTES 1024
 
+/* A computer player's strength on a CPU seat (cw_shell_desc.cpu_seats). What each level means is the game's: fewer
+ * mistakes and quicker play are the usual reading. */
+typedef enum { CW_SHELL_CPU_EASY, CW_SHELL_CPU_NORMAL, CW_SHELL_CPU_HARD, CW_SHELL_CPU_LEVELS } cw_shell_cpu_level;
+/* Seats a match can have: eight (CW_INPUT_MAX_PLAYERS); only four of them can hold a pad of their own, the rest are hot
+ * seats or CPUs. */
+#define CW_SHELL_MAX_SEATS 8
+/* cw_shell_start_seats: a person on the next pad, or a hot seat (a cw_shell_cpu_level is a CPU). */
+#define CW_SHELL_SEAT_PAD (-1)
+#define CW_SHELL_SEAT_HOT (-2)
+
 typedef enum { CW_SHELL_SND_MOVE, CW_SHELL_SND_SELECT, CW_SHELL_SND_BACK, CW_SHELL_SND_JOIN, CW_SHELL_SND_PAUSE } cw_shell_sound;
 
 /* How the menus show the selected row: the title, pause and Settings lists, the Graphics page, and the join screen's
@@ -124,7 +157,8 @@ typedef enum {
 typedef struct cw_shell_desc {
   const char *title;      /* the title screen's heading (default "cartwheel") */
   const char *subtitle;   /* a line under it (optional) */
-  int max_players;        /* 1..4 (default 1); more than 1 adds the join screen */
+  int max_players;        /* 1..CW_SHELL_MAX_SEATS (default 1); more than 1 adds the join screen; more than 4 needs hot
+                           * seats or CPUs (four pads) */
   bool shared_screen;     /* every player plays in one shared view (one camera, a scrolling brawler or a co-op
                            * platformer): cw_shell_split draws a single view and cw_shell_player_rect gives each
                            * player the whole canvas */
@@ -194,6 +228,13 @@ typedef struct cw_shell_desc {
   bool two_colour;
   cw_color ink;   /* alpha 0: white */
   cw_color paper; /* alpha 0: the menus' dark background (0.02 0.02 0.05) */
+  /* The join screen offers each seat to a CPU at Easy, Normal or Hard (see CPU seats above; max_players > 1). */
+  bool cpu_seats;
+  /* The join screen offers hot seats: people taking turns on the free pads (see Hot seats above). */
+  bool hot_seats;
+  /* Each seat's name and colour on the join screen (NULL / alpha 0: "P1".. and no colour): "Red", "Ada", ... */
+  const char *seat_names[CW_SHELL_MAX_SEATS];
+  cw_color seat_colors[CW_SHELL_MAX_SEATS];
 } cw_shell_desc;
 
 /* The save region for cw_app_desc.save / save_size: the shell's settings and
@@ -226,7 +267,7 @@ cw_shell_screen cw_shell_screen_now(void); /* the screen showing */
 bool cw_shell_hud_shown(void);
 int cw_shell_players(void); /* players in the match (1..max_players) */
 /* Start a match now with n players (pads 0..n-1, player 0 also on the
- * keyboard, mouse and touch): an autopilot build or a test skips the menus. */
+ * keyboard, mouse and touch): an autopilot build or a test skips the menus. No seat is a CPU (cw_shell_start_seats). */
 void cw_shell_start(int players);
 /* Join and leave during play: opens the join screen over the running match (play pauses, exactly as for the pause
  * menu) with the current players on their seats. A pad presses A to take a free seat, B to leave its own seat;
@@ -236,9 +277,27 @@ void cw_shell_start(int players);
  * player count is the highest seat held plus one. Returns false (and does nothing) outside play or in a one
  * player game. */
 bool cw_shell_join_open(void);
-/* Is this player seat held by a pad or the keyboard (0 .. cw_shell_players() - 1)? Right after a start every
+/* Is this player seat held by a pad, the keyboard or a CPU (0 .. cw_shell_players() - 1)? Right after a start every
  * seat below the player count is; after cw_shell_join_open a seat can be empty. */
 bool cw_shell_seat_taken(int seat);
+/* Does a CPU play this seat of the match (cw_shell_desc.cpu_seats)? Then *level (may be NULL) is its strength. False
+ * for a person's seat, an empty one, outside 0 .. cw_shell_players() - 1 and before a match. Read it in start and in
+ * players_changed (a person may take a CPU's seat during play). */
+bool cw_shell_seat_cpu(int seat, cw_shell_cpu_level *level);
+const char *cw_shell_cpu_level_label(cw_shell_cpu_level level); /* "Easy", "Normal", "Hard" ("?" out of range) */
+/* Start a match now with these seats (an autopilot build, a test): cpu[s] CW_SHELL_SEAT_PAD for a person on a pad
+ * (pads 0, 1, ... in seat order, the first such person also on the keyboard, mouse and touch; a fifth gets none),
+ * CW_SHELL_SEAT_HOT for a hot seat, or a cw_shell_cpu_level for a CPU. cpu NULL: all people on pads, as
+ * cw_shell_start. The setup is not saved. */
+void cw_shell_start_seats(int seats, const int *cpu);
+/* Is this seat a hot seat (people taking turns on the free pads)? */
+bool cw_shell_seat_hot(int seat);
+/* Whose turn it is (a seat of the match, -1 for nobody's): the pads no seat holds, and the keyboard, mouse and touch
+ * when no seat holds them, drive that seat if it is a hot seat, and no hot seat reads anything else. Call it in start
+ * and whenever the turn passes (calling it with the same seat again costs nothing); the change reaches the actions from
+ * the next frame, and a button held across it is not the new seat's press. */
+void cw_shell_set_turn(int seat);
+int cw_shell_turn(void); /* the seat cw_shell_set_turn named (-1 none) */
 /* True on the tick a pad or the keyboard that has no seat presses A (Enter) or Start: the cue for a game to
  * offer cw_shell_join_open, say between rounds. Poll it in fixed_update after cw_shell_update. */
 bool cw_shell_join_requested(void);

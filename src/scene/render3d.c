@@ -165,6 +165,8 @@ void cw_render3d_texture_target(t3_renderer *r, cw_texture target) {
 
 typedef struct camera3d {
   float fov, near, far;
+  int projection; /* PERSPECTIVE, ORTHOGONAL */
+  float size;     /* ORTHOGONAL: the view's height, metres */
   bool current;
   int32_t cull_layers;      /* the layers the camera's main picture draws (1) */
   int32_t viewmodel_layers; /* layers drawn after it, on top, with viewmodel_fov (0 = none) */
@@ -177,6 +179,7 @@ static const cw_node_type *camera3d_t;
 static void camera_init(cw_node n, void *data) {
   camera3d *c = data;
   c->fov = 70;
+  c->size = 10;
   c->near = 0.05f;
   c->far = 1000;
   c->current = true;
@@ -194,8 +197,13 @@ static void camera_destroy(cw_node n, void *data) {
   c->vm = NULL;
 }
 
+static const char *const projection_names[] = { "PERSPECTIVE", "ORTHOGONAL", NULL };
 static const cw_prop camera_props[] = {
-  CW_PROP_FIELD_RANGE(camera3d, fov, CW_T_FLOAT, 1, 179, "Vertical field of view, degrees."),
+  CW_PROP_FIELD_RANGE(camera3d, fov, CW_T_FLOAT, 1, 179, "Vertical field of view, degrees (PERSPECTIVE)."),
+  { .name = "projection", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = offsetof(camera3d, projection), .size = sizeof(int),
+    .enum_names = projection_names,
+    .doc = "PERSPECTIVE (fov) or ORTHOGONAL (size): an orthographic view draws things the same size at every distance (a board seen square on, a map)." },
+  CW_PROP_FIELD_RANGE(camera3d, size, CW_T_FLOAT, 0.001, 1e6, "ORTHOGONAL: the view's height in metres (its width is size times the aspect)."),
   CW_PROP_FIELD_RANGE(camera3d, near, CW_T_FLOAT, 0.001, 1000, "Near clip distance."),
   CW_PROP_FIELD_RANGE(camera3d, far, CW_T_FLOAT, 0.01, 1e7, "Far clip distance."),
   CW_PROP_FIELD(camera3d, current, CW_T_BOOL, CW_PROP_DEFAULT, "The first current camera in tree order renders."),
@@ -207,12 +215,39 @@ static const cw_prop camera_props[] = {
 
 static cw_node_type camera3d_type = {
   .name = "Camera3D", .parent = "Node3D", .data_size = sizeof(camera3d), .props = camera_props,
-  .doc = "A perspective camera.", .init = camera_init, .destroy = camera_destroy,
+  .doc = "A camera: perspective, or orthographic (projection).", .init = camera_init, .destroy = camera_destroy,
 };
 
 t3_camera *cw_camera3d_t3(cw_node n) {
   camera3d *c = cw_node_data_t(n, camera3d_t);
   return c ? c->cam : NULL;
+}
+
+/* the camera's lens from its properties at this aspect (w / h): fov or the orthographic box, near, far */
+static void camera_lens(camera3d *c, float aspect) {
+  t3_camera *k = c->cam;
+  k->fov = c->fov;
+  k->near = c->near;
+  k->far = c->far;
+  k->aspect = aspect;
+  if (c->projection == 1) {
+    float hh = c->size * 0.5f, hw = hh * aspect;
+    k->base.type = T3_ORTHOGRAPHIC_CAMERA;
+    k->left = -hw, k->right = hw, k->top = hh, k->bottom = -hh;
+  } else k->base.type = T3_PERSPECTIVE_CAMERA;
+  t3_camera_update_projection_matrix(k);
+}
+/* the lens of a Camera3D at an aspect, as the renderer will draw it (cartwheel/pick3d.h); false when not a Camera3D */
+bool cw__camera3d_lens(cw_node n, float aspect, bool *ortho, float *fov, float *size, float *near, float *far) {
+  camera3d *c = cw_node_data_t(n, camera3d_t);
+  if (!c) return false;
+  (void)aspect;
+  if (ortho) *ortho = c->projection == 1;
+  if (fov) *fov = c->fov;
+  if (size) *size = c->size;
+  if (near) *near = c->near;
+  if (far) *far = c->far;
+  return true;
 }
 
 static bool find_camera(cw_node n, void *u) {
@@ -1252,12 +1287,8 @@ t3_camera *cw_render3d_prepare(cw_tree *t, int w, int h) {
    * something updates what it moved) */
   t3_scene *sc = cw_render3d_scene(t);
   if (sc) sc->auto_update = !s->shadows_keep;
-  c->cam->fov = c->fov;
-  c->cam->near = c->near;
-  c->cam->far = c->far;
-  c->cam->aspect = h > 0 ? (float)w / (float)h : 1;
   c->cam->base.layers = (uint32_t)c->cull_layers;
-  t3_camera_update_projection_matrix(c->cam);
+  camera_lens(c, h > 0 ? (float)w / (float)h : 1);
   check_light_cap(t, s, c->cam);
   return c->cam;
 }
@@ -1267,12 +1298,8 @@ t3_camera *cw_render3d_prepare(cw_tree *t, int w, int h) {
 t3_camera *cw__render3d_view_camera(cw_node cam, int w, int h) {
   camera3d *c = cw_node_data_t(cam, camera3d_t);
   if (!c) return NULL;
-  c->cam->fov = c->fov;
-  c->cam->near = c->near;
-  c->cam->far = c->far;
-  c->cam->aspect = h > 0 ? (float)w / (float)h : 1;
   c->cam->base.layers = (uint32_t)c->cull_layers;
-  t3_camera_update_projection_matrix(c->cam);
+  camera_lens(c, h > 0 ? (float)w / (float)h : 1);
   return c->cam;
 }
 
@@ -1346,11 +1373,7 @@ t3_camera *cw__render3d_camera_prepare(cw_tree *t, int w, int h) {
   if (!s) return NULL;
   camera3d *c = cw_node_data_t(cw_render3d_camera(t), camera3d_t);
   if (!c) return NULL;
-  c->cam->fov = c->fov;
-  c->cam->near = c->near;
-  c->cam->far = c->far;
-  c->cam->aspect = h > 0 ? (float)w / (float)h : 1;
-  t3_camera_update_projection_matrix(c->cam);
+  camera_lens(c, h > 0 ? (float)w / (float)h : 1);
   return c->cam;
 }
 

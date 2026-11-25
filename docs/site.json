@@ -23,6 +23,7 @@
         "motion-input",
         "physics",
         "navigation",
+        "hex-grids",
         "rendering-3d",
         "terrain",
         "noise",

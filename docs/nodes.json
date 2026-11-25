@@ -211,7 +211,7 @@
   {
    "name": "Camera3D",
    "parent": "Node3D",
-   "doc": "A perspective camera.",
+   "doc": "A camera: perspective, or orthographic (projection).",
    "signals": [],
    "properties": [
     {
@@ -222,7 +222,29 @@
      "readonly": false,
      "min": 1,
      "max": 179,
-     "doc": "Vertical field of view, degrees."
+     "doc": "Vertical field of view, degrees (PERSPECTIVE)."
+    },
+    {
+     "name": "projection",
+     "type": "enum",
+     "default": "PERSPECTIVE",
+     "stored": true,
+     "readonly": false,
+     "enum": [
+      "PERSPECTIVE",
+      "ORTHOGONAL"
+     ],
+     "doc": "PERSPECTIVE (fov) or ORTHOGONAL (size): an orthographic view draws things the same size at every distance (a board seen square on, a map)."
+    },
+    {
+     "name": "size",
+     "type": "float",
+     "default": "10",
+     "stored": true,
+     "readonly": false,
+     "min": 0.001,
+     "max": 1000000,
+     "doc": "ORTHOGONAL: the view's height in metres (its width is size times the aspect)."
     },
     {
      "name": "near",

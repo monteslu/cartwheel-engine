@@ -25,8 +25,9 @@ static const char *s_entered, *s_exited;
 /* A camera's view volume, ready to test boxes against: its world matrix and the sine and cosine of half its
  * fov. The side planes come from the fov and the picture's aspect through cw_sincos, never from the projection
  * matrix (which the renderer builds with libm), so every host answers alike. */
+bool cw__camera3d_lens(cw_node n, float aspect, bool *ortho, float *fov, float *size, float *near, float *far); /* scene/render3d.c */
 typedef struct view3d {
-  bool valid;
+  bool valid, ortho; /* ortho: an orthographic camera, sn its half height (metres) and cs 1 */
   float cam[16], sn, cs, aspect, znear, zfar;
 } view3d;
 
@@ -44,6 +45,9 @@ static void view3d_from(cw_node camera, view3d *v) {
   cw_render_size(&w, &h);
   v->aspect = h > 0 ? (float)w / (float)h : 1;
   cw_sincos(fov * 0.5f * (CW_PI / 180.0f), &v->sn, &v->cs);
+  float size = 10;
+  v->ortho = false;
+  if (cw__camera3d_lens(camera, v->aspect, &v->ortho, NULL, &size, NULL, NULL) && v->ortho) v->sn = size * 0.5f, v->cs = 1;
   memcpy(v->cam, cm->e, sizeof v->cam);
   v->valid = true;
 }
@@ -62,7 +66,7 @@ static bool view3d_sees(const view3d *v, const t3_mat4 *box_world, t3_vec3 cente
           wz = b[2] * lx + b[6] * ly + b[10] * lz + b[14] - c[14];
     float px = wx * c[0] + wy * c[1] + wz * c[2], py = wx * c[4] + wy * c[5] + wz * c[6];
     float pz = -(wx * c[8] + wy * c[9] + wz * c[10]); /* depth in front of the camera */
-    float lim_y = pz * v->sn, lim_x = lim_y * v->aspect; /* |y| cos <= depth sin; |x| cos <= depth sin aspect */
+    float lim_y = v->ortho ? v->sn : pz * v->sn, lim_x = lim_y * v->aspect; /* |y| cos <= depth sin; |x| cos <= depth sin aspect */
     if (pz < v->znear) out[0]++;
     if (pz > v->zfar) out[1]++;
     if (py * v->cs > lim_y) out[2]++;

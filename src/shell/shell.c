@@ -35,7 +35,8 @@ typedef struct shell_save {
   uint8_t gfx[4];    /* cw_quality_saved, little-endian (0: none, or a save from before it) */
   uint8_t shake;     /* the old Screen shake setting, kept so saves keep their layout; no longer applied (screen shake is gone) */
   uint8_t text;      /* cw_text_scale_saved: Text size and Text background (0: none chosen, also a save from before them) */
-  uint8_t reserved[6];
+  uint8_t seats[3];  /* the join screen's hot seats and CPUs, three bits a seat for eight (0 none, 1 a hot seat, 2 + cw_shell_cpu_level); zeros in older saves */
+  uint8_t reserved[3];
   uint8_t game[CW_SHELL_GAME_SAVE_MAX];
 } shell_save;
 static shell_save SAVE;
@@ -59,6 +60,17 @@ static uint32_t save_sum(void) {
 
 /* ── state ──────────────────────────────────────────────────────────── */
 
+#define SEATS CW_SHELL_MAX_SEATS
+enum { KIND_NONE, KIND_HOT, KIND_CPU }; /* a join slot no pad holds: empty, a hot seat, a CPU (KIND_CPU + level) */
+
+/* the saved join setup: three bits a seat */
+static int saved_kind(int s) { return (int)((((uint32_t)SAVE.seats[0] | (uint32_t)SAVE.seats[1] << 8 | (uint32_t)SAVE.seats[2] << 16) >> (3 * s)) & 7u); }
+static void save_kind(int s, int v) {
+  uint32_t w = (uint32_t)SAVE.seats[0] | (uint32_t)SAVE.seats[1] << 8 | (uint32_t)SAVE.seats[2] << 16;
+  w = (w & ~(7u << (3 * s))) | ((uint32_t)v & 7u) << (3 * s);
+  for (int i = 0; i < 3; i++) SAVE.seats[i] = (uint8_t)(w >> (8 * i));
+}
+
 enum { A_UP, A_DOWN, A_LEFT, A_RIGHT, A_ACCEPT, A_BACK, A_PAUSE, A_START, A_COUNT };
 static const char *const ACTION_NAMES[A_COUNT] = { "ui_up", "ui_down", "ui_left", "ui_right", "ui_accept", "ui_back", "pause", "ui_start" };
 /* ui_start is what the join screen plays with: Start on a pad, Enter on the keyboard (its prompt) */
@@ -74,13 +86,19 @@ static struct {
   cw_shell_screen screen, settings_from;
   int item;            /* the highlighted menu item */
   int players;
-  int joined_pad[4];   /* join screen: each slot's pad (-1 none, CW_MAX_PADS = the keyboard) */
-  int seat_pad[4];     /* the pads the players hold in a running match, in player order (-1 none, CW_MAX_PADS = the keyboard) */
+  int joined_pad[SEATS]; /* join screen: each slot's pad (-1 none, CW_MAX_PADS = the keyboard) */
+  int seat_pad[SEATS];   /* the pads the players hold in a running match, in player order (-1 none, CW_MAX_PADS = the keyboard) */
+  int join_kind[SEATS];  /* join screen: what holds a slot no pad holds (KIND_NONE, KIND_HOT, KIND_CPU + level) */
+  int seat_cpu[SEATS];   /* the CPU playing each seat of a running match (-1 none, else its cw_shell_cpu_level) */
+  int seat_hot[SEATS];   /* the seat is a hot seat: people taking turns on the pads no seat holds (cw_shell_set_turn) */
+  int turn;              /* cw_shell_set_turn's seat (-1 none) */
+  int join_cursor;       /* join screen with cpu_seats or hot_seats: the seat ui_up / ui_down change */
+  int dbg_join_kind[SEATS];
   bool mid_join;       /* the join screen was opened during play (cw_shell_join_open) */
   int starting;        /* a Play press was answered: this many players, the game's start waits for that answer to be on screen */
   bool starting_shown; /* cw_shell_draw drew the answer */
   int starting_ticks;
-  bool seat_seen[4];   /* the seat's pad has been seen connected (an unplugged pad frees its seat; one never seen is not "gone") */
+  bool seat_seen[SEATS];   /* the seat's pad has been seen connected (an unplugged pad frees its seat; one never seen is not "gone") */
   float progress;
   cw_action act[A_COUNT];
   cw_bus music, sfx;
@@ -98,6 +116,19 @@ static struct {
 
 static void sound(cw_shell_sound s) {
   if (S.d.sound) S.d.sound(s, S.d.user);
+}
+static void route_turn(void);
+static void route_hot(int to);
+static bool any_hot(void);
+/* a hot-seat match under the pause or Settings menus: the free pads and the keyboard drive the menus through every hot
+ * seat (the menus answer any player); back in play they follow the turn again */
+static void hot_menu_routing(cw_shell_screen from, cw_shell_screen to) {
+  if (!any_hot() || to == CW_SHELL_TITLE || to == CW_SHELL_JOIN) return;
+  if (to == CW_SHELL_PLAY) {
+    if (from != CW_SHELL_PLAY) route_turn();
+    return;
+  }
+  route_hot(-2); /* every hot seat */
 }
 static void go(cw_shell_screen to) {
   cw_shell_screen from = S.screen;
@@ -119,6 +150,7 @@ static void go(cw_shell_screen to) {
   cw_tree *t = cw_scene_app_tree();
   if (t) cw_tree_set_paused(t, to != CW_SHELL_PLAY);
   if (to == CW_SHELL_PLAY && from != CW_SHELL_PLAY && S.hooked) S.just_resumed = true;
+  hot_menu_routing(from, to);
   if (from != to && S.d.screen_changed) S.d.screen_changed(from, to, S.d.user);
 }
 static void apply_volumes(void) {
@@ -343,7 +375,7 @@ void cw_shell_init(const cw_shell_desc *d) {
   S.d = *d;
   if (!S.d.title) S.d.title = "cartwheel";
   if (S.d.max_players < 1) S.d.max_players = 1;
-  if (S.d.max_players > 4) S.d.max_players = 4;
+  if (S.d.max_players > SEATS) S.d.max_players = SEATS;
   if (!S.d.font.id) S.d.font = cw_ui_font_sans();
   if (S.d.accent.a == 0) S.d.accent = cw_rgba(1.0f, 0.78f, 0.25f, 1);
   cw_shell_set_selection(S.d.selection);
@@ -391,7 +423,7 @@ void cw_shell_init(const cw_shell_desc *d) {
   if (S.sfx < 0) S.sfx = cw_bus_create("sfx", 0);
   apply_volumes();
   S.players = 1;
-  for (int i = 0; i < 4; i++) S.joined_pad[i] = -1;
+  for (int i = 0; i < SEATS; i++) S.joined_pad[i] = -1;
   cw_debug_field("shell.screen", &S.dbg_screen, CW_DBG_I32, 1);
   cw_debug_field("shell.selection", &S.dbg_selection, CW_DBG_I32, 1);
   cw_debug_field("shell.two_colour", &S.dbg_two_colour, CW_DBG_I32, 1);
@@ -404,6 +436,14 @@ void cw_shell_init(const cw_shell_desc *d) {
   cw_debug_field("shell.starting", &S.dbg_starting, CW_DBG_I32, 1);
   cw_debug_field("shell.hud", &S.dbg_hud, CW_DBG_I32, 1);
   cw_debug_field("shell.settings", &S.dbg_settings, CW_DBG_I32, 1);
+  /* CPU seats: each seat's CPU in the match (-1 none, else its level), on the join screen (0 none, 1 + level), the cursor */
+  for (int i = 0; i < SEATS; i++) S.seat_cpu[i] = -1, S.seat_hot[i] = 0;
+  S.turn = -1;
+  cw_debug_field("shell.seat_cpu", S.seat_cpu, CW_DBG_I32, SEATS);
+  cw_debug_field("shell.seat_hot", S.seat_hot, CW_DBG_I32, SEATS);
+  cw_debug_field("shell.turn", &S.turn, CW_DBG_I32, 1);
+  cw_debug_field("shell.join_kind", S.dbg_join_kind, CW_DBG_I32, SEATS);
+  cw_debug_field("shell.join_cursor", &S.join_cursor, CW_DBG_I32, 1);
   S.inited = true;
   S.screen = S.d.loading ? CW_SHELL_LOADING : CW_SHELL_TITLE;
   S.dbg_screen = (int)S.screen;
@@ -430,9 +470,13 @@ void cw_shell_loaded(void) {
 
 /* players: pads 0..n-1 in order, player 0 also on the keyboard, mouse and touch */
 static void assign_default(int n) {
-  for (int p = 0; p < 4; p++) {
-    cw_input_assign(p, p < n ? p : -1, p == 0 ? CW_DEVICE_KEYBOARD | CW_DEVICE_MOUSE | CW_DEVICE_TOUCH : 0);
-    S.seat_pad[p] = p < n ? p : -1;
+  S.turn = -1;
+  for (int p = 0; p < SEATS; p++) {
+    bool pad = p < n && p < CW_MAX_PADS;
+    cw_input_assign(p, pad ? p : -1, p == 0 ? CW_DEVICE_KEYBOARD | CW_DEVICE_MOUSE | CW_DEVICE_TOUCH : 0);
+    S.seat_pad[p] = pad ? p : -1;
+    S.seat_cpu[p] = -1;
+    S.seat_hot[p] = 0;
     S.seat_seen[p] = false;
   }
 }
@@ -464,18 +508,86 @@ void cw_shell_start(int players) {
 
 bool cw_shell_join_open(void) {
   if (!S.inited || S.screen != CW_SHELL_PLAY || S.d.max_players < 2) return false;
-  for (int i = 0; i < 4; i++) S.joined_pad[i] = i < S.players ? S.seat_pad[i] : -1;
+  for (int i = 0; i < SEATS; i++) {
+    S.joined_pad[i] = i < S.players ? S.seat_pad[i] : -1;
+    S.join_kind[i] = i >= S.players ? KIND_NONE : S.seat_cpu[i] >= 0 ? KIND_CPU + S.seat_cpu[i] : S.seat_hot[i] ? KIND_HOT : KIND_NONE;
+  }
+  S.join_cursor = 0;
   S.mid_join = true;
   go(CW_SHELL_JOIN);
   return true;
 }
 
 bool cw_shell_seat_taken(int seat) {
-  return S.inited && seat >= 0 && seat < S.players && S.seat_pad[seat] >= 0;
+  return S.inited && seat >= 0 && seat < S.players && (S.seat_pad[seat] >= 0 || S.seat_cpu[seat] >= 0 || S.seat_hot[seat]);
+}
+
+bool cw_shell_seat_hot(int seat) { return S.inited && seat >= 0 && seat < S.players && S.seat_hot[seat]; }
+static bool any_hot(void) {
+  for (int s = 0; s < S.players; s++)
+    if (S.seat_hot[s]) return true;
+  return false;
+}
+
+/* The pads no seat holds, and the keyboard, mouse and touch when no seat holds them, go to the hot seat whose turn it
+ * is; every other hot seat reads nothing. CW_TEST_TURN_WRONG_SEAT (a gate control) hands them to the next seat. */
+static void route_turn(void) {
+  int to = S.turn;
+  if (to >= 0 && S.players > 0 && cw_test_env("CW_TEST_TURN_WRONG_SEAT")) to = (to + 1) % S.players;
+  route_hot(to);
+}
+/* the free devices to hot seat `to` (-2: to every hot seat, under the menus; -1: to none) */
+static void route_hot(int to) {
+  uint32_t held = 0;
+  bool kb_held = false;
+  for (int s = 0; s < S.players; s++) {
+    if (S.seat_pad[s] >= 0 && S.seat_pad[s] < CW_MAX_PADS) held |= 1u << S.seat_pad[s];
+    if (S.seat_pad[s] >= 0 && (cw_input_player_devices(s) & CW_DEVICE_KEYBOARD)) kb_held = true;
+  }
+  for (int s = 0; s < S.players; s++)
+    if (S.seat_hot[s])
+      cw_input_assign_pads(s, s == to || to == -2 ? ((1u << CW_MAX_PADS) - 1) & ~held : 0,
+                           (s == to || to == -2) && !kb_held ? CW_DEVICE_KEYBOARD | CW_DEVICE_MOUSE | CW_DEVICE_TOUCH : 0);
+}
+
+void cw_shell_set_turn(int seat) {
+  if (!S.inited) return;
+  if (seat < 0 || seat >= S.players) seat = -1;
+  if (seat == S.turn) return;
+  S.turn = seat;
+  route_turn();
+}
+int cw_shell_turn(void) { return S.inited ? S.turn : -1; }
+
+bool cw_shell_seat_cpu(int seat, cw_shell_cpu_level *level) {
+  if (!S.inited || seat < 0 || seat >= S.players || seat >= SEATS || S.seat_cpu[seat] < 0) return false;
+  if (level) *level = (cw_shell_cpu_level)S.seat_cpu[seat];
+  return true;
+}
+
+const char *cw_shell_cpu_level_label(cw_shell_cpu_level level) {
+  static const char *const L[CW_SHELL_CPU_LEVELS] = { "Easy", "Normal", "Hard" };
+  return (int)level >= 0 && level < CW_SHELL_CPU_LEVELS ? L[level] : "?";
+}
+
+void cw_shell_start_seats(int seats, const int *cpu) {
+  int n = CW_CLAMP(seats, 1, S.d.max_players > 0 ? S.d.max_players : 1);
+  int pad = 0, first_person = -1;
+  S.turn = -1;
+  for (int s = 0; s < SEATS; s++) {
+    bool is_cpu = s < n && cpu && cpu[s] >= 0, hot = s < n && cpu && cpu[s] == CW_SHELL_SEAT_HOT;
+    S.seat_cpu[s] = is_cpu ? CW_CLAMP(cpu[s], 0, CW_SHELL_CPU_LEVELS - 1) : -1;
+    S.seat_hot[s] = hot;
+    S.seat_pad[s] = s < n && !is_cpu && !hot && pad < CW_MAX_PADS ? pad++ : -1;
+    S.seat_seen[s] = false;
+    if (S.seat_pad[s] >= 0 && first_person < 0) first_person = s;
+    cw_input_assign(s, S.seat_pad[s], s == first_person ? CW_DEVICE_KEYBOARD | CW_DEVICE_MOUSE | CW_DEVICE_TOUCH : 0);
+  }
+  begin_match(n);
 }
 
 bool cw_shell_join_requested(void) {
-  if (!S.inited || S.screen != CW_SHELL_PLAY || S.d.max_players < 2) return false;
+  if (!S.inited || S.screen != CW_SHELL_PLAY || S.d.max_players < 2 || any_hot()) return false; /* free pads drive the hot seats */
   for (int pad = 0; pad <= CW_MAX_PADS; pad++) {
     bool seated = false;
     for (int p = 0; p < S.players; p++) seated |= S.seat_pad[p] == pad;
@@ -488,17 +600,20 @@ bool cw_shell_join_requested(void) {
 }
 
 bool cw_shell_join_press(void) {
-  if (!S.inited || S.screen != CW_SHELL_PLAY || S.d.max_players < 2) return false;
+  if (!S.inited || S.screen != CW_SHELL_PLAY || S.d.max_players < 2 || any_hot()) return false; /* free pads drive the hot seats */
   /* pads only: the keyboard usually drives a seated player already (Enter there is that player's own key) */
   for (int pad = 0; pad < CW_MAX_PADS; pad++) {
     bool seated = false;
     for (int p = 0; p < S.players; p++) seated |= S.seat_pad[p] == pad;
     if (seated || !(cw__input_pad_pressed(pad) & (1u << CW_PAD_SOUTH))) continue;
     int seat = -1;
-    for (int s = 0; s < S.d.max_players && s < 4; s++)
-      if (s >= S.players || S.seat_pad[s] < 0) { seat = s; break; }
+    for (int s = 0; s < S.d.max_players && s < SEATS; s++)
+      if (s >= S.players || (S.seat_pad[s] < 0 && S.seat_cpu[s] < 0)) { seat = s; break; }
+    for (int s = 0; s < S.players && seat < 0; s++) /* every seat taken: a person takes a CPU's */
+      if (S.seat_cpu[s] >= 0) seat = s;
     if (seat < 0) return false;
     S.seat_pad[seat] = pad;
+    S.seat_cpu[seat] = -1;
     S.seat_seen[seat] = false;
     cw_input_assign(seat, pad, 0);
     if (seat + 1 > S.players) S.players = seat + 1;
@@ -539,16 +654,27 @@ void cw_shell_set_pause_items(const char *const items[2]) {
 
 void cw_shell_to_title(void) {
   assign_default(4); /* menus answer every pad again */
-  for (int i = 0; i < 4; i++) S.joined_pad[i] = -1;
+  for (int i = 0; i < SEATS; i++) S.joined_pad[i] = -1;
   S.starting = S.dbg_starting = 0;
   go(CW_SHELL_TITLE);
+}
+
+/* the join screen opens from the title: nobody seated, the CPUs as the player left them last time */
+static void join_fresh(void) {
+  for (int k = 0; k < SEATS; k++) {
+    int v = k < S.d.max_players ? saved_kind(k) : KIND_NONE;
+    if ((v == KIND_HOT && !S.d.hot_seats) || (v >= KIND_CPU && (!S.d.cpu_seats || v >= KIND_CPU + CW_SHELL_CPU_LEVELS))) v = KIND_NONE;
+    S.joined_pad[k] = -1;
+    S.join_kind[k] = v;
+  }
+  S.join_cursor = 0;
 }
 
 /* ── menus ──────────────────────────────────────────────────────────── */
 
 /* any player's action this tick (before a match every pad is a player) */
 static bool any_pressed(int a) {
-  for (int p = 0; p < 4; p++)
+  for (int p = 0; p < SEATS; p++)
     if (cw_action_just_pressed(p, S.act[a])) return true;
   return false;
 }
@@ -676,7 +802,7 @@ static void accept(int i) {
     sound(CW_SHELL_SND_SELECT);
     if (i == 0) {
       if (S.d.max_players > 1) {
-        for (int k = 0; k < 4; k++) S.joined_pad[k] = -1;
+        join_fresh();
         go(CW_SHELL_JOIN);
       } else {
         assign_default(1);
@@ -716,25 +842,38 @@ static void accept(int i) {
   }
 }
 
-/* go: every press to play ends here. At the start of a match players take the pads in slot order (a gap closes); in
- * the middle of one every seat keeps its number, a seat nobody holds reads no input. The keyboard, mouse and touch
- * belong to the keyboard's player, else to the first player */
+static cw_rect join_seat_rect(int seat, cw_vec2 sz); /* the drawing's, below: a tap on a seat */
+
+/* go: every press to play ends here. At the start of a match players take the pads in slot order (a gap closes; a CPU
+ * or hot seat keeps its place in that order); in the middle of one every seat keeps its number, a seat nobody holds
+ * reads no input. The keyboard, mouse and touch belong to the keyboard's player, else to the first person on a pad, else
+ * they follow the turn with the free pads (hot seats) */
 static void join_go(void) {
-  int p = 0, kb_slot = -1, first = -1, last = -1;
-  for (int s = 0; s < 4; s++) {
+  int p = 0, kb_slot = -1, last = -1, first_person = -1;
+  for (int s = 0; s < SEATS; s++) {
     if (S.joined_pad[s] == CW_MAX_PADS) kb_slot = s;
-    if (S.joined_pad[s] >= 0) {
-      if (first < 0) first = s;
-      last = s;
-    }
+    if (S.joined_pad[s] >= 0 && first_person < 0) first_person = s;
+    if (S.joined_pad[s] >= 0 || S.join_kind[s] != KIND_NONE) last = s;
   }
+  if ((S.d.cpu_seats || S.d.hot_seats) && !S.mid_join) { /* the hot seats and CPUs the player set, for next time */
+    bool changed = false;
+    for (int s = 0; s < SEATS; s++) {
+      int v = S.joined_pad[s] < 0 ? S.join_kind[s] : KIND_NONE;
+      if (saved_kind(s) != v) save_kind(s, v), changed = true;
+    }
+    if (changed) cw_shell_save_commit();
+  }
+  S.turn = -1;
   if (S.mid_join) {
-    for (int s = 0; s < 4; s++) {
+    for (int s = 0; s < SEATS; s++) {
+      int k = S.joined_pad[s] < 0 ? S.join_kind[s] : KIND_NONE;
       S.seat_pad[s] = S.joined_pad[s];
+      S.seat_cpu[s] = k >= KIND_CPU ? k - KIND_CPU : -1;
+      S.seat_hot[s] = k == KIND_HOT;
       S.seat_seen[s] = false;
-      bool k = S.joined_pad[s] == CW_MAX_PADS;
-      bool devices = S.joined_pad[s] >= 0 && (k || (kb_slot < 0 && s == first));
-      cw_input_assign(s, S.joined_pad[s] < 0 || k ? -1 : S.joined_pad[s], devices ? CW_DEVICE_KEYBOARD | CW_DEVICE_MOUSE | CW_DEVICE_TOUCH : 0);
+      bool kb = S.joined_pad[s] == CW_MAX_PADS;
+      bool devices = S.joined_pad[s] >= 0 && (kb || (kb_slot < 0 && s == first_person));
+      cw_input_assign(s, S.joined_pad[s] < 0 || kb ? -1 : S.joined_pad[s], devices ? CW_DEVICE_KEYBOARD | CW_DEVICE_MOUSE | CW_DEVICE_TOUCH : 0);
     }
     sound(CW_SHELL_SND_SELECT);
     S.mid_join = false;
@@ -745,37 +884,95 @@ static void join_go(void) {
     if (S.d.players_changed) S.d.players_changed(S.players, S.d.user);
     return;
   }
-  for (int s = 0; s < 4; s++) {
-    if (S.joined_pad[s] < 0) continue;
-    bool k = S.joined_pad[s] == CW_MAX_PADS;
-    bool devices = k || (kb_slot < 0 && p == 0);
-    S.seat_pad[p] = S.joined_pad[s];
+  bool kb_given = false;
+  for (int s = 0; s < SEATS; s++) {
+    bool person = S.joined_pad[s] >= 0;
+    int k = person ? KIND_NONE : S.join_kind[s];
+    if (!person && k == KIND_NONE) continue;
+    bool kb = S.joined_pad[s] == CW_MAX_PADS;
+    bool devices = person && (kb || (kb_slot < 0 && !kb_given));
+    kb_given |= devices;
+    S.seat_pad[p] = person ? S.joined_pad[s] : -1;
+    S.seat_cpu[p] = k >= KIND_CPU ? k - KIND_CPU : -1;
+    S.seat_hot[p] = k == KIND_HOT;
     S.seat_seen[p] = false;
-    cw_input_assign(p++, k ? -1 : S.joined_pad[s], devices ? CW_DEVICE_KEYBOARD | CW_DEVICE_MOUSE | CW_DEVICE_TOUCH : 0);
+    cw_input_assign(p++, !person || kb ? -1 : S.joined_pad[s], devices ? CW_DEVICE_KEYBOARD | CW_DEVICE_MOUSE | CW_DEVICE_TOUCH : 0);
   }
-  for (int q = p; q < 4; q++) cw_input_assign(q, -1, 0), S.seat_pad[q] = -1;
+  for (int q = p; q < SEATS; q++) cw_input_assign(q, -1, 0), S.seat_pad[q] = -1, S.seat_cpu[q] = -1, S.seat_hot[q] = 0;
   begin_starting(p);
 }
 
-static int free_seat(void) {
+static int empty_seat(void) {
   for (int s = 0; s < S.d.max_players; s++)
-    if (S.joined_pad[s] < 0) return s;
+    if (S.joined_pad[s] < 0 && S.join_kind[s] == KIND_NONE) return s;
   return -1;
+}
+/* a seat nobody holds, else the first a CPU holds: a person who joins takes a CPU's seat (never a hot seat's: the
+ * free pads already play those) */
+static int free_seat(void) {
+  int s = empty_seat();
+  if (s >= 0) return s;
+  for (s = 0; s < S.d.max_players; s++)
+    if (S.joined_pad[s] < 0 && S.join_kind[s] >= KIND_CPU) return s;
+  return -1;
+}
+static bool join_has_hot(void) {
+  for (int s = 0; s < S.d.max_players; s++)
+    if (S.joined_pad[s] < 0 && S.join_kind[s] == KIND_HOT) return true;
+  return false;
+}
+
+/* step what holds a seat: empty, a hot seat (hot_seats), CPU Easy, Normal, Hard (cpu_seats), and round (dir +1), or
+ * back (-1); a person's seat stays theirs */
+static void step_kind(int seat, int dir) {
+  if (seat < 0 || seat >= S.d.max_players || S.joined_pad[seat] >= 0) return;
+  int order[2 + CW_SHELL_CPU_LEVELS], n = 0, at = 0;
+  order[n++] = KIND_NONE;
+  if (S.d.hot_seats) order[n++] = KIND_HOT;
+  if (S.d.cpu_seats)
+    for (int l = 0; l < CW_SHELL_CPU_LEVELS; l++) order[n++] = KIND_CPU + l;
+  for (int i = 0; i < n; i++)
+    if (order[i] == S.join_kind[seat]) at = i;
+  S.join_kind[seat] = order[(at + dir + n) % n];
+  sound(CW_SHELL_SND_MOVE);
 }
 
 /* join: a pad joins with South and leaves with East; the keyboard joins with Enter and leaves with Esc. Start on any
  * pad plays, seating that pad first if it has no seat and one is free (no seat free: the seated players play). Enter
- * on a keyboard that holds a seat plays, and with every seat taken by others. */
+ * on a keyboard that holds a seat plays, and with every seat taken by others. With cpu_seats, left / right move the
+ * seat cursor and up / down step its CPU (any player's ui actions: before a match every pad is a player). */
 static void join_update(void) {
   bool play = false;
-  /* a tap (the mouse, or a finger on a touch screen): the keyboard's seat, which holds the mouse and touch, joins if it
-   * has none, and the game starts (in a match, goes back to it) */
+  for (int s = 0; s < SEATS; s++) S.dbg_join_kind[s] = S.joined_pad[s] < 0 ? S.join_kind[s] : 0;
+  if (S.d.cpu_seats || S.d.hot_seats) {
+    int dx = any_pressed(A_RIGHT) - any_pressed(A_LEFT), dy = any_pressed(A_UP) - any_pressed(A_DOWN);
+    if (dx) {
+      S.join_cursor = (S.join_cursor + dx + S.d.max_players) % S.d.max_players;
+      sound(CW_SHELL_SND_MOVE);
+    }
+    if (dy) step_kind(S.join_cursor, dy);
+  }
+  /* a tap (the mouse, or a finger on a touch screen): with cpu_seats a tap on a seat no person holds steps its CPU;
+   * any other tap seats the keyboard's player (who holds the mouse and touch) if it has no seat, and the game starts
+   * (in a match, goes back to it) */
   float tx, ty;
   if (cw__input_tap(&tx, &ty)) {
+    if (S.d.cpu_seats || S.d.hot_seats) {
+      cw_vec2 c = cw_r2d_window_to_canvas(cw_v2(tx, ty));
+      cw_vec2 sz = cw_r2d_canvas_size();
+      for (int s = 0; s < S.d.max_players; s++) {
+        cw_rect r = join_seat_rect(s, sz);
+        if (c.x >= r.x && c.x < r.x + r.w && c.y >= r.y && c.y < r.y + r.h && S.joined_pad[s] < 0) {
+          S.join_cursor = s;
+          step_kind(s, 1);
+          return;
+        }
+      }
+    }
     bool seated = false;
-    for (int s = 0; s < 4; s++) seated |= S.joined_pad[s] == CW_MAX_PADS;
-    int s = seated ? -1 : free_seat();
-    if (s >= 0) S.joined_pad[s] = CW_MAX_PADS, sound(CW_SHELL_SND_JOIN);
+    for (int s = 0; s < SEATS; s++) seated |= S.joined_pad[s] == CW_MAX_PADS;
+    int s = seated || join_has_hot() ? -1 : free_seat(); /* with hot seats the keyboard follows the turn */
+    if (s >= 0) S.joined_pad[s] = CW_MAX_PADS, S.join_kind[s] = KIND_NONE, sound(CW_SHELL_SND_JOIN);
     join_go();
     return;
   }
@@ -786,7 +983,7 @@ static void join_update(void) {
     bool east = kb ? cw__input_key_pressed(41) /* escape */ : (pressed & (1u << CW_PAD_EAST));
     bool start = pressed & (1u << CW_PAD_START);
     int slot = -1, n = 0;
-    for (int s = 0; s < 4; s++) {
+    for (int s = 0; s < SEATS; s++) {
       if (S.joined_pad[s] == pad) slot = s;
       if (S.joined_pad[s] >= 0) n++;
     }
@@ -794,6 +991,7 @@ static void join_update(void) {
       int s = free_seat();
       if (s >= 0) {
         S.joined_pad[s] = pad;
+        S.join_kind[s] = KIND_NONE;
         slot = s;
         sound(CW_SHELL_SND_JOIN);
       } else if (kb) play = true;
@@ -814,13 +1012,14 @@ static void join_update(void) {
       return;
     } else if (slot >= 0 && south && kb) play = true;
     if (start) {
-      if (slot < 0) {
-        int s = free_seat();
+      if (slot < 0 && !join_has_hot()) { /* an empty seat only: Start never replaces a CPU, and pads drive hot seats */
+        int s = empty_seat();
         if (s >= 0) S.joined_pad[s] = pad;
       }
       play = true;
     }
   }
+  for (int s = 0; s < SEATS; s++) S.dbg_join_kind[s] = S.joined_pad[s] < 0 ? S.join_kind[s] : 0;
   if (play) join_go();
 }
 
@@ -885,13 +1084,23 @@ static void menu_tick(void) {
             S.seat_seen[p] = false;
             cw_input_assign(p, -1, 0);
           }
-          if (S.seat_pad[p] >= 0) last = p;
+          if (S.seat_pad[p] >= 0 || S.seat_cpu[p] >= 0) last = p;
         }
         S.players = last + 1;
         S.dbg_players = S.players;
         if (S.d.players_changed) S.d.players_changed(S.players, S.d.user);
       }
     }
+    if (any_hot()) /* a free pad (one that drives the hot seats) pauses on any turn, a CPU's too */
+      for (int pd = 0; pd < CW_MAX_PADS; pd++) {
+        bool held = false;
+        for (int p = 0; p < S.players; p++) held |= S.seat_pad[p] == pd;
+        if (!held && (cw__input_pad_pressed(pd) & (1u << CW_PAD_START))) {
+          sound(CW_SHELL_SND_PAUSE);
+          go(CW_SHELL_PAUSE);
+          return;
+        }
+      }
     for (int p = 0; p < S.players; p++)
       if (cw_action_just_pressed(p, S.act[A_PAUSE])) {
         sound(CW_SHELL_SND_PAUSE);
@@ -976,7 +1185,7 @@ static void text(const char *s, float x, float y, float size, cw_color c, int al
  * Left out when no seat is on a pad, keyboard or mouse: on a touch screen the menu items are tapped. */
 static bool hints_wanted(void) {
   const cw_raw_input *raw = cw_input_raw();
-  for (int p = 0; p < 4; p++) {
+  for (int p = 0; p < SEATS; p++) {
     cw_prompt_device d = cw_prompt_device_of(p);
     int pad = cw_input_player_pad(p);
     if (d == CW_PROMPT_PAD && raw && pad >= 0 && raw->pads[pad].connected) return true;
@@ -1131,11 +1340,15 @@ static const char *const HINT_SETTINGS = "{ui_up|ui_down} choose    {ui_left|ui_
 
 /* a seat's box on the join screen: a quarter of the canvas wide whatever the seat count, the row centred under the
  * heading (four seats fill the width, as they always did) */
-static float join_seat_x(int seat, cw_vec2 sz) { /* the seat's centre */
-  return sz.x * 0.5f + ((float)seat - (float)(S.d.max_players - 1) * 0.5f) * (sz.x / 4.0f);
+static float join_seat_x(int seat, cw_vec2 sz) { /* the seat's centre; more than four seats: rows of four */
+  int row = seat / 4, in_row = S.d.max_players - row * 4;
+  if (in_row > 4) in_row = 4;
+  return sz.x * 0.5f + ((float)(seat % 4) - (float)(in_row - 1) * 0.5f) * (sz.x / 4.0f);
 }
 static cw_rect join_seat_rect(int seat, cw_vec2 sz) {
   float u = sz.y / 20.0f, w = sz.x / 4.0f;
+  if (S.d.max_players > 4) /* two rows, each a little shorter */
+    return cw_rect_make(join_seat_x(seat, sz) - w * 0.5f + u * 0.4f, sz.y * (seat < 4 ? 0.22f : 0.53f), w - u * 0.8f, sz.y * 0.29f);
   return cw_rect_make(join_seat_x(seat, sz) - w * 0.5f + u * 0.4f, sz.y * 0.3f, w - u * 0.8f, sz.y * 0.4f);
 }
 cw_rect cw_shell_join_seat_rect(int seat) {
@@ -1224,37 +1437,65 @@ void cw_shell_draw(void) {
     for (int s = 0; s < S.d.max_players; s++) {
       cw_rect r = join_seat_rect(s, sz);
       float x = join_seat_x(s, sz), inner = r.w;
-      bool in = S.joined_pad[s] >= 0, inv = in && sel_style() == CW_SHELL_SELECT_INVERSE;
+      int kind = S.joined_pad[s] < 0 ? S.join_kind[s] : KIND_NONE; /* a hot seat or a CPU on the seat */
+      bool in = S.joined_pad[s] >= 0 || kind != KIND_NONE, inv = in && sel_style() == CW_SHELL_SELECT_INVERSE;
+      cw_color tint = s < SEATS ? S.d.seat_colors[s] : (cw_color){ 0 };
       if (two) { /* a sheet of paper in an ink frame, a taken seat's frame heavier (INVERSE: all ink) */
         cw_r2d_rect(r, inv ? S.d.ink : S.d.paper);
         cw_r2d_rect_lines(r, fmaxf(2.0f, u * (in ? 0.16f : 0.06f)), S.d.ink);
       } else
+      {
         cw_r2d_rect(r,
                     inv ? S.d.accent : in ? cw_rgba(S.d.accent.r, S.d.accent.g, S.d.accent.b, 0.25f) : cw_rgba(1, 1, 1, 0.06f));
-      char p[16];
-      snprintf(p, sizeof p, "P%d", s + 1);
-      float py = sz.y * 0.36f, ly = fmaxf(sz.y * 0.5f, py + drawn(u * 1.4f) * 1.25f);
+        if (tint.a > 0) /* the seat's colour (cw_shell_desc.seat_colors): a band along its top */
+          cw_r2d_rect(cw_rect_make(r.x, r.y, r.w, r.h * 0.08f), cw_rgba(tint.r, tint.g, tint.b, in ? 1.0f : 0.45f));
+      }
+      char p[40];
+      const char *name = s < SEATS ? S.d.seat_names[s] : NULL;
+      if (name && name[0]) snprintf(p, sizeof p, "%s", name);
+      else snprintf(p, sizeof p, "P%d", s + 1);
+      float ls = S.d.max_players > 4 ? u * 1.1f : u * 1.4f; /* two rows of seats: a smaller name */
+      while (ls > u * 0.7f && text_w(p, ls) > inner * 0.9f) ls *= 0.9f;
+      float py = r.y + r.h * 0.15f, ly = fmaxf(r.y + r.h * 0.5f, py + drawn(ls) * 1.25f);
       text_plain = inv;
-      text(p, x, py, u * 1.4f, in ? sel_text_colour() : fg(0.4f), 1);
+      text(p, x, py, ls, in ? sel_text_colour() : fg(0.4f), 1);
       if (in) {
-        float pw = text_w(p, u * 1.4f);
-        sel_mark(x - pw * 0.5f, py, pw, drawn(u * 1.4f));
+        float pw = text_w(p, ls);
+        sel_mark(x - pw * 0.5f, py, pw, drawn(ls));
       }
       char dev[24];
       if (!in) {
         const char *m = fit_markup("{ui_accept} join", u, inner * 0.92f);
         cw_prompt_text(S.d.font, m, -1, cw_v2(x, ly - u * 0.1f), u, fg(0.7f), CW_ALIGN_CENTER);
       } else {
-        if (S.joined_pad[s] == CW_MAX_PADS) snprintf(dev, sizeof dev, "keyboard");
+        if (kind >= KIND_CPU) snprintf(dev, sizeof dev, "CPU %s", cw_shell_cpu_level_label((cw_shell_cpu_level)(kind - KIND_CPU)));
+        else if (kind == KIND_HOT) snprintf(dev, sizeof dev, "pass the pad");
+        else if (S.joined_pad[s] == CW_MAX_PADS) snprintf(dev, sizeof dev, "keyboard");
         else snprintf(dev, sizeof dev, "pad %d", S.joined_pad[s] + 1);
         text_plain = inv;
         text(dev, x, ly, u * 0.8f, inv ? sel_text_colour() : fg(0.9f), 1);
       }
+      if ((S.d.cpu_seats || S.d.hot_seats) && s == S.join_cursor && hints_wanted()) { /* the seat the up / down buttons change: a frame round it */
+        float t = fmaxf(2.0f, u * 0.1f);
+        cw_r2d_rect_lines(cw_rect_make(r.x - t * 1.5f, r.y - t * 1.5f, r.w + t * 3, r.h + t * 3), t, acc());
+        if (S.joined_pad[s] < 0) {
+          const char *m = fit_markup(S.d.hot_seats && S.d.cpu_seats ? "{ui_up|ui_down} seat" : S.d.hot_seats ? "{ui_up|ui_down} player" : "{ui_up|ui_down} CPU", u * 0.8f, inner * 0.92f);
+          cw_prompt_text(S.d.font, m, -1, cw_v2(x, r.y + r.h - drawn(u * 0.8f) * 1.6f), u * 0.8f, fg(0.7f), CW_ALIGN_CENTER);
+        }
+      }
     }
-    hint(S.mid_join ? "{ui_accept} join    {ui_back} leave    {ui_start} back to the game" : "{ui_accept} join    {ui_back} leave    {ui_start} play",
-         cx, sz.y - u * 1.2f, u * 0.8f);
-    /* a touch screen has no buttons to name: a tap plays (join_update) */
-    if (!hints_wanted()) text(S.mid_join ? "tap to go back to the game" : "tap to play", cx, sz.y - u * 1.2f - drawn(u * 0.9f), u * 0.9f, fg(0.8f), 1);
+    if (S.d.cpu_seats)
+      hint(S.mid_join ? "{ui_accept} join    {ui_back} leave    {ui_left|ui_right} seat    {ui_start} back to the game"
+                      : "{ui_accept} join    {ui_back} leave    {ui_left|ui_right} seat    {ui_start} play",
+           cx, sz.y - u * 1.2f, u * 0.8f);
+    else
+      hint(S.mid_join ? "{ui_accept} join    {ui_back} leave    {ui_start} back to the game" : "{ui_accept} join    {ui_back} leave    {ui_start} play",
+           cx, sz.y - u * 1.2f, u * 0.8f);
+    /* a touch screen has no buttons to name: a tap plays (join_update), a tap on a seat sets its CPU */
+    if (!hints_wanted())
+      text(S.d.cpu_seats ? (S.mid_join ? "tap a seat for a CPU, elsewhere to go back" : "tap a seat for a CPU, elsewhere to play")
+                         : (S.mid_join ? "tap to go back to the game" : "tap to play"),
+           cx, sz.y - u * 1.2f - drawn(u * 0.9f), u * 0.9f, fg(0.8f), 1);
     break;
   }
   default: break;
@@ -1280,7 +1521,7 @@ void cw_shell_draw(void) {
 int cw_shell_split(cw_pipeline *p, const cw_node *cameras) {
   if (!p && cw_scene_app_tree()) p = cw_pipeline_of(cw_scene_app_tree());
   if (!p) return 0;
-  if (S.players <= 1 || S.d.shared_screen) {
+  if (S.players <= 1 || S.d.shared_screen || S.players > 4) { /* more than four seats (hot seats): one shared view */
     cw_pipeline_set_views(p, NULL, 0);
     return 0;
   }
@@ -1293,7 +1534,7 @@ static cw_rect quadrant(int i, cw_vec2 sz) {
 }
 cw_rect cw_shell_player_rect(int player) {
   cw_vec2 sz = cw_r2d_canvas_size();
-  if (S.players <= 1 || S.d.shared_screen || player < 0 || player >= S.players) return cw_rect_make(0, 0, sz.x, sz.y);
+  if (S.players <= 1 || S.d.shared_screen || S.players > 4 || player < 0 || player >= S.players) return cw_rect_make(0, 0, sz.x, sz.y);
   if (S.players == 2) {
     if (sz.y > sz.x) return cw_rect_make(0, player * sz.y * 0.5f, sz.x, sz.y * 0.5f);
     return cw_rect_make(player * sz.x * 0.5f, 0, sz.x * 0.5f, sz.y);

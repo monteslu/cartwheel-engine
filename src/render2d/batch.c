@@ -634,6 +634,15 @@ static void win_canvas(float *vw, float *vh) {
   *vh = R.win_virtual_h > 0 ? (float)R.win_virtual_h : r.h / sy;
 }
 
+/* the canvas of the last window pass (its virtual size when the app sets one); (0, 0) before the first (picking's
+ * views, src/scene/pick3d.c) */
+cw_vec2 cw__r2d_window_canvas_size(void) {
+  if (!(R.canvas_rect.w > 0) || !(R.canvas_rect.h > 0)) return (cw_vec2){ 0, 0 };
+  float vw, vh;
+  win_canvas(&vw, &vh);
+  return (cw_vec2){ vw, vh };
+}
+
 cw_vec2 cw_r2d_window_to_canvas(cw_vec2 p) {
   cw_rect r = R.canvas_rect;
   if (r.w <= 0 || r.h <= 0) return p;

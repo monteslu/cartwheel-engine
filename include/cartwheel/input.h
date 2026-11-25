@@ -57,7 +57,10 @@
 extern "C" {
 #endif
 
-#define CW_INPUT_MAX_PLAYERS 4
+/* Players (seats) the input module keeps: more than the four pads a host has, so a board game seats up to eight people who
+ * take turns on the pads (cw_input_assign_pads, the shell's hot seats). Raised from 4 in v0.79.0: a recording made with 4
+ * still replays. */
+#define CW_INPUT_MAX_PLAYERS 8
 #define CW_INPUT_MAX_ACTIONS 64
 #define CW_INPUT_MAX_BINDINGS 8
 #define CW_INPUT_MAX_TOUCH_CONTROLS 16
@@ -158,13 +161,71 @@ typedef enum { CW_INPUT_FRAME, CW_INPUT_TICK } cw_input_context;
 cw_input_context cw_input_set_context(cw_input_context c);
 cw_input_context cw_input_context_now(void); /* which snapshot queries read now */
 
+/* ── actions set by the game: CPU seats, autopilots, tests ─────────────
+ * A computer player decides in fixed_update and presses its seat's actions
+ * for THIS tick, exactly as a pad would have: the same queries read them
+ * (pressed, just_pressed against the tick before, strength, axis, vector),
+ * and they go into the tick snapshot that is recorded, replayed and hashed.
+ * A game can therefore play four CPU seats through the code path people use,
+ * and a recorded run with CPUs replays byte for byte.
+ *
+ *   static void fixed_update(void *u, double dt) {
+ *     for (int p = 0; p < 4; p++)
+ *       if (cpu_seat[p]) {
+ *         cw_action_value v[2] = { { a_place, think_place(p) ? 1.0f : 0.0f }, { a_right, 0.6f } };
+ *         cw_input_set_actions(p, v, 2);              // the whole seat this tick
+ *       }
+ *     ... gameplay reads every player through cw_action_* as usual ...
+ *   }
+ *
+ * A set replaces what the player's devices gave that action this tick; the
+ * next tick starts again from the devices (a CPU seat has none: the shell
+ * assigns it cw_input_assign(seat, -1, 0)), so an action held for many ticks
+ * is set every tick. strength is 0..1 (quantized like a pad's), pressed at or
+ * above the action's dead zone.
+ *
+ * When: inside fixed_update only (the tick context), before the gameplay that
+ * reads them. A tick is hashed and recorded when it ends (the next tick, or
+ * the end of the frame's ticks), so everything set during fixed_update is in
+ * cw_input_stream_hash, cw_input_record_hash and the recording. Outside a
+ * tick a set does nothing and returns false (logged once).
+ *
+ * During a replay (cw_input_replay_begin, the debug request `record replay`)
+ * the recording already holds what was set: the calls change nothing and
+ * return false, and the game's CPU code may run as it did or not at all.
+ * Debug field input.set_calls counts the actions set (presentation only). */
+typedef struct cw_action_value {
+  cw_action action;
+  float strength; /* 0 released .. 1 fully pressed */
+} cw_action_value;
+/* Set one action of one player for this tick (the others keep what the devices gave). */
+bool cw_input_set_action(int player, cw_action a, float strength);
+/* Set a whole seat for this tick: every action of the player released, then each listed one set (an action listed
+ * twice: the last wins; an invalid action in the list is skipped). count 0 releases the seat. */
+bool cw_input_set_actions(int player, const cw_action_value *values, int count);
+/* A stick for this tick: v in screen space (x right, y down, as cw_input_vector returns it; longer than 1 is cut to
+ * 1) onto the four actions' strengths, so cw_input_vector over the same actions reads v back (up to quantization).
+ * An action given as -1 is left alone. */
+bool cw_input_set_vector(int player, cw_action left, cw_action right, cw_action up, cw_action down, cw_vec2 v);
+
 /* ── players and devices ───────────────────────────────────────────────
  * Default: player 0 = pad 0 + keyboard + mouse + touch; players 1..3 = pads
- * 1..3. pad -1 = none. A device may be shared by several players. */
+ * 1..3; players 4..7 none. pad -1 = none. A device may be shared by several
+ * players, and a player may read several pads (cw_input_assign_pads).
+ *
+ * A player whose devices change (cw_input_assign*) does not see what is
+ * already held on the new devices as a press: the next frame takes it as held,
+ * so a button that ends one player's turn is not the next player's first press
+ * when the pad passes to them (hot seats). Devices are read when a frame
+ * begins: a change made inside fixed_update applies from the next frame. */
 enum { CW_DEVICE_KEYBOARD = 1, CW_DEVICE_MOUSE = 2, CW_DEVICE_TOUCH = 4 };
 /* Pad outside 0..CW_MAX_PADS-1 = none; devices = CW_DEVICE_* mask. */
 void cw_input_assign(int player, int pad, uint32_t devices);
-int cw_input_player_pad(int player); /* -1 when none or player out of range */
+/* Several pads for one player: a bit per pad (1 << pad); the strongest of them answers each binding. A hot seat on
+ * its turn reads every pad no one else holds. 0 = no pad. */
+void cw_input_assign_pads(int player, uint32_t pads, uint32_t devices);
+uint32_t cw_input_player_pads(int player); /* the player's pads as bits (0 when none or out of range) */
+int cw_input_player_pad(int player); /* the player's first pad; -1 when none or player out of range */
 uint32_t cw_input_player_devices(int player); /* CW_DEVICE_* mask; 0 when player out of range */
 
 /* ── rumble ────────────────────────────────────────────────────────────

@@ -22,7 +22,8 @@ int16_t cw__input_quant(float v) {
 
 static void reset_players(void) {
   for (int p = 0; p < CW_INPUT_MAX_PLAYERS; p++) {
-    I.pad[p] = p;
+    I.pad[p] = p < CW_MAX_PADS ? p : -1;
+    I.pads[p] = p < CW_MAX_PADS ? 1u << p : 0;
     I.devices[p] = p == 0 ? (CW_DEVICE_KEYBOARD | CW_DEVICE_MOUSE | CW_DEVICE_TOUCH) : 0;
   }
 }
@@ -38,6 +39,7 @@ void cw__input_ensure_init(void) {
     debug_registered = true;
     cw_debug_u32("input.hash", &I.stream_hash);
     cw_debug_u32("input.ticks", &I.stream_ticks);
+    cw_debug_u32("input.set_calls", &I.set_calls);
     cw__input_register_commands();
   }
   I.stream_hash = CW_HASH32_INIT;
@@ -194,10 +196,23 @@ void cw_input_on_bindings_changed(cw_bindings_changed_fn fn, void *user) {
 /* ── players ───────────────────────────────────────────────────────── */
 
 void cw_input_assign(int player, int pad, uint32_t devices) {
+  cw_input_assign_pads(player, pad >= 0 && pad < CW_MAX_PADS ? 1u << pad : 0, devices);
+}
+void cw_input_assign_pads(int player, uint32_t pads, uint32_t devices) {
   cw__input_ensure_init();
   CW_ASSERT(player >= 0 && player < CW_INPUT_MAX_PLAYERS, "players are 0..CW_INPUT_MAX_PLAYERS-1");
-  I.pad[player] = pad >= 0 && pad < CW_MAX_PADS ? pad : -1;
+  pads &= (1u << CW_MAX_PADS) - 1;
+  /* a player who gets other devices (a hot seat whose turn it is) does not see a button already held on them as a
+   * new press: the next frame takes what is held as held (cw__in.route_fresh) */
+  if (I.pads[player] != pads || I.devices[player] != devices) I.route_fresh[player] = true;
+  I.pads[player] = pads;
+  I.pad[player] = -1;
+  for (int i = 0; i < CW_MAX_PADS; i++)
+    if (pads & (1u << i)) { I.pad[player] = i; break; }
   I.devices[player] = devices;
+}
+uint32_t cw_input_player_pads(int player) {
+  return I.init && player >= 0 && player < CW_INPUT_MAX_PLAYERS ? I.pads[player] : 0;
 }
 int cw_input_player_pad(int player) {
   return I.init && player >= 0 && player < CW_INPUT_MAX_PLAYERS ? I.pad[player] : -1;
@@ -310,10 +325,28 @@ cw_input_context cw_input_context_now(void) { return I.ctx; }
 
 /* ── evaluation ────────────────────────────────────────────────────── */
 
+static int16_t eval_pad(const cw_pad_state *ps, cw_binding b, bool *sub) {
+  if (b.kind == CW_BIND_PAD_BUTTON) {
+    if (b.code >= CW_PAD_BUTTON_COUNT) return 0;
+    if (ps->pressed & (1u << b.code)) *sub = true;
+    return ps->buttons & (1u << b.code) ? 32767 : 0;
+  }
+  if (b.code >= CW_AXIS_COUNT) return 0;
+  int16_t q = cw__input_quant(ps->axes[b.code] * (float)b.dir);
+  return q > 0 && q >= cw__input_quant(b.threshold) ? q : 0;
+}
+
 static int16_t eval_binding(int player, cw_binding b, const cw_raw_input *raw, bool *sub) {
   uint32_t dev = I.devices[player];
-  int pad = I.pad[player];
-  const cw_pad_state *ps = pad >= 0 && pad < CW_MAX_PADS && raw->pads[pad].connected ? &raw->pads[pad] : NULL;
+  if (b.kind == CW_BIND_PAD_BUTTON || b.kind == CW_BIND_PAD_AXIS) { /* every pad the player holds: the strongest */
+    int16_t best = 0;
+    for (int i = 0; i < CW_MAX_PADS; i++)
+      if ((I.pads[player] & (1u << i)) && raw->pads[i].connected) {
+        int16_t v = eval_pad(&raw->pads[i], b, sub);
+        if (v > best) best = v;
+      }
+    return best;
+  }
   switch ((cw_binding_kind)b.kind) {
   case CW_BIND_KEY:
     if (!(dev & CW_DEVICE_KEYBOARD) || b.code >= CW_KEY_COUNT) return 0;
@@ -327,14 +360,8 @@ static int16_t eval_binding(int player, cw_binding b, const cw_raw_input *raw, b
     if (!(dev & CW_DEVICE_MOUSE)) return 0;
     return cw__input_quant((b.code ? raw->wheel_x : raw->wheel_y) * (float)b.dir);
   case CW_BIND_PAD_BUTTON:
-    if (!ps || b.code >= CW_PAD_BUTTON_COUNT) return 0;
-    if (ps->pressed & (1u << b.code)) *sub = true;
-    return ps->buttons & (1u << b.code) ? 32767 : 0;
-  case CW_BIND_PAD_AXIS: {
-    if (!ps || b.code >= CW_AXIS_COUNT) return 0;
-    int16_t q = cw__input_quant(ps->axes[b.code] * (float)b.dir);
-    return q > 0 && q >= cw__input_quant(b.threshold) ? q : 0;
-  }
+  case CW_BIND_PAD_AXIS:
+    break; /* above */
   case CW_BIND_TOUCH_BUTTON:
     if (!(dev & CW_DEVICE_TOUCH) || b.code >= I.ncontrols) return 0;
     if (I.controls[b.code].tapped) *sub = true;
@@ -390,12 +417,12 @@ static void track_devices(const cw_raw_input *raw) {
   }
   for (int pl = 0; pl < CW_INPUT_MAX_PLAYERS; pl++) {
     uint32_t dev = I.devices[pl];
-    int pad = I.pad[pl];
     /* the last of these wins in a frame that saw several */
     if (mouse && (dev & CW_DEVICE_MOUSE)) I.prompt_last[pl] = 3; /* CW_PROMPT_MOUSE */
     if (key && (dev & CW_DEVICE_KEYBOARD)) I.prompt_last[pl] = 2; /* CW_PROMPT_KEYBOARD */
     if (touch && (dev & CW_DEVICE_TOUCH)) I.prompt_last[pl] = 4; /* CW_PROMPT_TOUCH */
-    if (pad >= 0 && pad < CW_MAX_PADS && pad_used[pad]) I.prompt_last[pl] = 1; /* CW_PROMPT_PAD */
+    for (int i = 0; i < CW_MAX_PADS; i++)
+      if ((I.pads[pl] & (1u << i)) && pad_used[i]) I.prompt_last[pl] = 1; /* CW_PROMPT_PAD */
   }
   I.prompt_count = 0; /* glyphs are counted per frame */
 }
@@ -414,6 +441,10 @@ void cw_input_frame_begin(const cw_raw_input *raw) {
         if (v > q) q = v;
       }
       bool held = q > 0 && q >= d->dz_q;
+      if (I.route_fresh[p]) { /* new devices this frame: what is held on them is held, not a press */
+        I.frame_held[p][a] = held;
+        sub = false;
+      }
       cw__slot *f = &I.frame.s[p][a];
       bool was_pressed = f->flags & CW__PRESSED;
       bool pressed = held || sub;
@@ -426,6 +457,7 @@ void cw_input_frame_begin(const cw_raw_input *raw) {
       if (pressed && f->raw > I.pend_peak[p][a]) I.pend_peak[p][a] = f->raw;
     }
   }
+  for (int p = 0; p < CW_INPUT_MAX_PLAYERS; p++) I.route_fresh[p] = false;
   for (int i = 0; i < CW_MAX_PADS; i++) I.pend_pad[i] |= raw->pads[i].pressed;
   for (int k = 0; k < CW_KEY_COUNT; k++) I.pend_keys[k] |= raw->keys_pressed[k];
   I.pend_mouse |= raw->mouse_pressed;
@@ -465,8 +497,20 @@ uint32_t cw__snapshot_hash(const cw__snapshot *s, int count, uint32_t h) {
   return h;
 }
 
+void cw__input_tick_close(void) {
+  if (!I.tick_open) return;
+  I.tick_open = false;
+  I.stream_hash = cw__snapshot_hash(I.tick, I.count, I.stream_hash);
+  I.stream_ticks++;
+  /* the gate control: what the game set left out of the recording (as if a CPU bypassed the input path) */
+  if (I.tick_rec) cw__input_record_tick(cw__input_record_skip_set() && I.tick == &I.tick_live ? &I.tick_dev : I.tick);
+  I.tick_rec = false;
+}
+
 void cw_input_tick_begin(void) {
   if (!I.init) return;
+  cw__input_tick_close(); /* the tick before, with whatever the game set during it */
+  I.tick_prev = *I.tick;
   live_tick();
   memcpy(I.tick_pad, I.pend_pad, sizeof I.tick_pad);
   memset(I.pend_pad, 0, sizeof I.pend_pad);
@@ -477,15 +521,68 @@ void cw_input_tick_begin(void) {
   I.tick_tap = I.pend_tap, I.tick_tap_x = I.pend_tap_x, I.tick_tap_y = I.pend_tap_y;
   I.pend_tap = false;
   I.tick = &I.tick_live;
+  I.tick_dev = I.tick_live;
   if (cw__input_replay_next()) I.tick = &I.tick_replay;
-  I.stream_hash = cw__snapshot_hash(I.tick, I.count, I.stream_hash);
-  I.stream_ticks++;
-  cw__input_record_tick(I.tick);
+  I.tick_open = true;
+  I.tick_rec = cw_input_recording_active();
   I.ctx = CW_INPUT_TICK;
 }
 
 void cw_input_ticks_end(void) {
-  if (I.init) I.ctx = CW_INPUT_FRAME;
+  if (!I.init) return;
+  cw__input_tick_close();
+  I.ctx = CW_INPUT_FRAME;
+}
+
+/* ── actions set by the game (a CPU seat, an autopilot, a test) ───────── */
+
+static bool set_ok(int player, cw_action a, const char *fn) {
+  if (!I.init || player < 0 || player >= CW_INPUT_MAX_PLAYERS || a < 0 || a >= I.count) return false;
+  if (I.ctx != CW_INPUT_TICK || !I.tick_open) {
+    static bool told;
+    if (!told) cw_warn("%s: call it inside fixed_update (it sets this tick's actions); ignored", fn);
+    told = true;
+    return false;
+  }
+  return I.tick == &I.tick_live; /* a replay: the recording already holds what was set */
+}
+
+static void set_slot(int player, cw_action a, float strength) {
+  int16_t q = cw__input_quant(strength);
+  bool held = q > 0 && q >= I.actions[a].dz_q;
+  bool was = I.tick_prev.s[player][a].flags & CW__PRESSED;
+  cw__slot *t = &I.tick_live.s[player][a];
+  t->flags = (uint8_t)((held ? CW__PRESSED : 0) | (held && !was ? CW__JUST_PRESSED : 0) | (was && !held ? CW__JUST_RELEASED : 0));
+  t->raw = q;
+  I.set_calls++;
+}
+
+bool cw_input_set_action(int player, cw_action a, float strength) {
+  if (!set_ok(player, a, "cw_input_set_action")) return false;
+  set_slot(player, a, strength);
+  return true;
+}
+
+bool cw_input_set_actions(int player, const cw_action_value *values, int count) {
+  if (!set_ok(player, 0, "cw_input_set_actions")) return false;
+  for (int a = 0; a < I.count; a++) set_slot(player, a, 0);
+  for (int i = 0; i < count && values; i++)
+    if (values[i].action >= 0 && values[i].action < I.count) set_slot(player, values[i].action, values[i].strength);
+  return true;
+}
+
+bool cw_input_set_vector(int player, cw_action left, cw_action right, cw_action up, cw_action down, cw_vec2 v) {
+  if (!set_ok(player, 0, "cw_input_set_vector")) return false;
+  float len2 = v.x * v.x + v.y * v.y;
+  if (len2 > 1) { /* a vector longer than a stick can push is cut to length 1 */
+    float len = sqrtf(len2);
+    v.x /= len, v.y /= len;
+  }
+  cw_action acts[4] = { left, right, up, down };
+  float vals[4] = { v.x < 0 ? -v.x : 0, v.x > 0 ? v.x : 0, v.y < 0 ? -v.y : 0, v.y > 0 ? v.y : 0 };
+  for (int i = 0; i < 4; i++)
+    if (acts[i] >= 0 && acts[i] < I.count) set_slot(player, acts[i], vals[i]);
+  return true;
 }
 
 uint32_t cw__input_pad_pressed(int pad) {

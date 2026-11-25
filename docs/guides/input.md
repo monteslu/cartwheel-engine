@@ -30,6 +30,10 @@ Load defaults, commit them, then apply the player's saved overrides on top:
 
 Up to four players. By default player 0 owns pad 0, the keyboard, the mouse and touch, and players 1 to 3 own pads 1 to 3. [cw_input_assign](api:cw_input_assign) changes that; a device may be shared. Every query takes the player index.
 
+### More players than pads
+
+`CW_INPUT_MAX_PLAYERS` is eight while a host has four pads: players past the pads are CPU seats ([cw_input_set_actions](api:cw_input_set_actions)) or people who take turns. [cw_input_assign_pads](api:cw_input_assign_pads) gives a player several pads at once (a bit per pad; each binding reads the strongest), which is how the shell's hot seats hand every free pad to the seat whose turn it is ([The game shell](guide:game-shell)). When a player's devices change, what is already held on them is held, not a new press, so the button that ended one turn is not the next player's first press. The change takes effect from the next frame. A recording made with four players replays on eight.
+
 ## Ticks and frames: two snapshots
 
 The module keeps two snapshots of every action, and a query reads whichever one fits where it is called:
@@ -183,6 +187,27 @@ pitch -= turn.y;
 
 It uses only + - * / and `cw_pow`, so a replay turns the same on every host. The `unit-input` gate checks the dead zone, the curve, the ramp and the assist.
 
+## Cursors between targets
+
+A board, a market of cards, a map of build pads or a network of cities is a set of spots, not a grid of UI controls. [cartwheel/cursor.h](header:cursor.h) gives each player a cursor that hops between such spots by stick direction, all players at once, and that a mouse or finger moves by pointing.
+
+- The targets are points ([cw_cursors_set_points](api:cw_cursors_set_points)) or nodes ([cw_cursors_set_nodes](api:cw_cursors_set_nodes): their positions are read at each step, so targets on moving pieces move with them).
+- A hop goes to the target that lies most nearly the way held: ahead of the cursor, at most `cone` times as far to the side as ahead (1.75: about 60 degrees either way), lowest `ahead + side_weight x sideways` winning (2.2). A near target a little off the line beats a far one dead ahead. Nothing that way: the cursor stays.
+- The stick snaps to eight ways past `deadzone`. A hop happens on the tick a way is first held, then every `repeat_every` ticks once it has been held `repeat_delay` ticks (18 and 9 by default).
+- Directions are screen directions. Give each player their view ([cw_cursors_set_view](api:cw_cursors_set_view): the camera and the rectangle its picture fills) and 3D targets are projected through that camera, so up on the stick is up on that player's picture, also in split screen with the cameras on opposite sides of the table. Without a view, 2D targets read x right and y down, and 3D ones the board plane seen from above.
+- [cw_cursors_set_allow](api:cw_cursors_set_allow) says which targets a player may stand on (their own pieces, empty squares); a cursor left on one it may no longer use goes to the nearest it may.
+- [cw_cursors_point](api:cw_cursors_point) moves a player's cursor where the pointer is: with node targets, onto the node a 3D pick ([Picking and projection](guide:rendering-3d)) lands on or under, else onto the target nearest the point within `pick_radius` pixels.
+
+`samples/board_pick` moves two players' cursors over the 36 squares of a board, each player's view set when the split screen is laid out:
+
+@include samples/board_pick/main.c#views
+
+and each tick:
+
+@include samples/board_pick/main.c#cursors
+
+[cw_cursor_hop_select](api:cw_cursor_hop_select) is the hop alone, for a simulation that keeps its own cursor state (a replay, a CPU player choosing the way to press). Everything is + - * / and square roots on the targets' places, so cursors hop the same on every host. The `board-cursor` gate hops two players' cursors at once; its control reads the sticks mirrored and lands on other squares. `unit-pick3d` checks the scores, the cone, the repeat timing, the allow rule and the view turning the stick round.
+
 ## Record and replay
 
 A recording is the tick snapshot of every action of every player, delta-encoded: an idle tick costs well under a byte. It carries the action names, so it replays into any build that defines them. While a replay is active every tick takes its snapshot from the recording instead of devices; [cw_input_replay_step](api:cw_input_replay_step) advances it immediately, so a game can re-simulate a whole run inside one frame. `input_demo` records from its first tick and, on "verify", replays the recording into a fresh state and compares:
@@ -200,6 +225,30 @@ node tools/run-cart.mjs --host native --app input_demo --frames 100 --input test
 ```
 
 179 ticks of input took 317 bytes. Every app with actions also publishes `input.hash` and `input.ticks` as debug fields (the hash of every tick snapshot so far), and the `record start|stop|status|fetch|replay` debug command records and replays from outside the game, which is how a bug report carries its exact input.
+
+## Actions set by the game: CPU seats
+
+A computer player decides inside `fixed_update` and presses its seat's actions for that tick, as a pad would: [cw_input_set_actions](api:cw_input_set_actions) sets the whole seat (everything it does not list is up), [cw_input_set_action](api:cw_input_set_action) one action, and [cw_input_set_vector](api:cw_input_set_vector) a stick onto four actions. The same queries read them back (`cw_action_pressed`, `cw_action_just_pressed` against the tick before, strength, axis, vector), so the game's rules read every seat one way and never ask who is a CPU. A board game with four CPUs plays through exactly the code people use, and a test can drive any seat the same way.
+
+`hex_board` presses one action at a time, down for one tick and up again, so every press is a fresh `just_pressed`:
+
+@include samples/hex_board/main.c#cpu_presses
+
+The CPUs press first in the tick, then the rules read every seat:
+
+@include samples/hex_board/main.c#tick
+
+What a set does:
+
+- It replaces what that player's devices gave the action for this tick only. The next tick starts again from the devices, so an action held for many ticks is set every tick. A CPU seat has no devices: the shell assigns it `cw_input_assign(seat, -1, 0)` ([The game shell](guide:game-shell)).
+- Strength is 0 to 1, quantized like a pad's; it counts as pressed at or above the action's dead zone.
+- It works only inside `fixed_update` (the tick context); anywhere else it returns false and logs once.
+- A tick is hashed and recorded when it ends (at the next tick, or at the end of the frame's ticks), so everything set during `fixed_update` is in `cw_input_stream_hash`, the recording and its hash. A run with no sets hashes as before.
+- During a replay the recording already holds what was set: the calls change nothing and return false. The game's CPU code can keep running (its decisions come out the same) or not run at all.
+
+[cw_set_raw_input_filter](api:cw_set_raw_input_filter) is still the tool for an autopilot that stands in for the devices once a frame; a CPU that decides per tick, possibly several ticks in one frame, sets actions instead.
+
+The `hex-board-replay` gate plays a person on a pad against three CPUs, records the match, replays it and requires the same board, CPU state and input hash. Its control (`CW_TEST_SET_UNRECORDED=1`) leaves what the game set out of the recording, as a CPU that bypassed the input path would, and the replay loses the CPUs' moves. `unit-input-set-actions` checks the rules above and the same replay with and without the CPU code running.
 
 ## Rumble
 
