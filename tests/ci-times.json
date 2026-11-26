@@ -271,6 +271,7 @@
   "post-bloom": 4,
   "program-extensions": 4,
   "programs-survey-fails": 4,
+  "programs-checkout": 4,
   "unit-audio-tempo-lock": 4,
   "unit-nav": 4,
   "decal-walls": 3,

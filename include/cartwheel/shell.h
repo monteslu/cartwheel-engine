@@ -270,7 +270,12 @@ typedef struct cw_shell_desc {
    * "Starting..."), before the menus read input, with the screen showing. In a scene app the paused tree calls no
    * fixed_update outside play (the pause rule above), so a test's or an autopilot's start goes here: cw_shell_start /
    * cw_shell_start_seats in it starts the match on this tick (gameplay runs from this tick on). A page's own input (ui_left
-   * / ui_right to turn pages) is read here too. */
+   * / ui_right to turn pages) is read here too.
+   * A test switch read here (cw_test_env) is read on every title tick from frame 2 on, so on a cart the switch has to
+   * arrive with the load: romdev's env request rides on the load (tools/run-cart.mjs --env, loadMedia firstCommand,
+   * answered in frame 1), Chromium and wasmcart-native post it before frame 1. An env request sent after the title has
+   * ticked comes after the game read the name unset, and romdev refuses it, naming the variable (src/core/env.c: a name
+   * read before the first env request cannot be set by it). */
   void (*menu_update)(cw_shell_screen screen, void *user);
 } cw_shell_desc;
 

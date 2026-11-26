@@ -4,6 +4,14 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.84.1 (2026-11-26)
+
+### Fixed
+
+- **`tools/programs.mjs --carts` ran no survey**: building its run list threw "Cannot access 'runs' before initialization" (the preset switches, gate runs and player runs were pushed to the per-scene list before it existed; they go on the base list, which each `--scene` then repeats).
+- **`--carts` from a game checkout finds the game**: with no `--build` and no `CW_PROJECT_ROOT`, the project is the nearest directory at or above the working directory with a build (`build/cart-wgpu/carts`, `build/cart-wgpu/apps` or `build/native/apps`), looking no higher than the checkout's root. Every `run-cart` it starts is told that project, so the SDK's copy of the tools (`deps/cartwheel-sdk/<target>/tools/`) loads the game's carts, not the SDK's, and `--dry` writes the game's `out/programs-survey.json`. `CW_PROJECT_ROOT` is only an override now. Gate `programs-checkout` (no GPU), whose controls include v0.84.0's `programs.mjs`.
+- **Docs**: `cw_shell_desc.menu_update` (`cartwheel/shell.h`) and the game-shell guide say that a test switch read there is read on every title tick, so a cart's `env` request has to come with the load (`tools/run-cart.mjs --env`); romdev refuses one sent after the title has ticked, naming the variable.
+
 ## v0.84.0 (2026-11-25)
 
 ### Added

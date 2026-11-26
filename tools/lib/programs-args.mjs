@@ -37,14 +37,16 @@ export const sceneLabel = (env) => Object.entries(env).map(([k, v]) => `${k}=${v
 
 /**
  * The project a survey belongs to and the build whose app list (build/<dir>/apps/*.json: each app's tables) it reads.
- *   CW_PROJECT_ROOT names the project; else --build <project>/build/native names it; else, for --carts, the nearest
- *   directory at or above the working directory that holds build/cart-wgpu/carts (a game's own checkout, built
- *   against a prebuilt SDK whose tools are elsewhere), else the engine tree itself.
+ *   CW_PROJECT_ROOT names the project (an override); else --build <project>/build/native names it; else, for --carts,
+ *   the nearest directory at or above the working directory with a build (build/cart-wgpu/carts, build/cart-wgpu/apps
+ *   or build/native/apps: a game's own checkout, built against a prebuilt SDK whose tools sit in its deps/), looking
+ *   no higher than the checkout's root (the first directory with a .git), else the engine tree itself.
  *   The build: --build when given; for a native survey this tree's build/native (as before); for --carts the
  *   project's build/native when it has an app list, else its build/cart-wgpu (a project that builds only carts).
  * @param {{ root: string, cwd: string, env: Record<string, string | undefined>, build: string | null, carts: boolean }} o
  * @returns {{ proj: string, build: string }}
  */
+const BUILT = [['build', 'cart-wgpu', 'carts'], ['build', 'cart-wgpu', 'apps'], ['build', 'native', 'apps']];
 export function surveyTree({ root, cwd, env, build, carts }) {
   const named = build ? resolve(build) : null;
   let proj = root;
@@ -52,8 +54,8 @@ export function surveyTree({ root, cwd, env, build, carts }) {
   else if (named && basename(named) === 'native' && basename(dirname(named)) === 'build') proj = dirname(dirname(named));
   else if (carts && !named) {
     for (let d = resolve(cwd); ; d = dirname(d)) {
-      if (existsSync(join(d, 'build', 'cart-wgpu', 'carts'))) { proj = d; break; }
-      if (dirname(d) === d) break;
+      if (BUILT.some((p) => existsSync(join(d, ...p)))) { proj = d; break; }
+      if (existsSync(join(d, '.git')) || dirname(d) === d) break; // a checkout's root: never a parent tree's build
     }
   }
   let out = named;

@@ -191,5 +191,14 @@ script drives them like gameplay. Gate `board-kit-test-start` starts
 `board_kit` (a scene app) from `menu_update`; its control makes the same
 start from `fixed_update`, and the match never starts.
 
+Because `menu_update` reads its switch on every title tick (from frame 2
+on), a cart's switch has to come with the load. On romdev the env request
+rides on the load (`tools/run-cart.mjs --env`, `loadMedia`'s
+`firstCommand`, answered in frame 1); Chromium and wasmcart-native post it
+before frame 1. An `env` request sent after a few title frames arrives
+after the game has already read the variable unset, and romdev refuses it,
+naming the variable: a name read before the first `env` request cannot be
+set by it (`src/core/env.c`), since the run so far went without it.
+
 [cartwheel-starter](https://github.com/monteslu/cartwheel-starter) is a
 complete small game on the shell.

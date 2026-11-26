@@ -27,7 +27,7 @@
 //       loading screen, which a deterministic run never shows.
 //       Every run must survey something: one that fails, never renders a frame or has no state list to read (a cart
 //       that draws without the engine's pipeline) stops the survey with exit 1, naming the app and the host, and no
-//       table changes; no carts to survey (a project's carts need CW_PROJECT_ROOT) is an error too.
+//       table changes; no carts to survey is an error too (it names the directory it looked in).
 //   --presets a,b   the graphics presets each native app run goes through (default every one: verylow, low, medium,
 //       high, ultra; cartwheel/quality.h), since each asks for states of its own
 //   Every survey (native and --carts) also switches the preset half way through a run, from High to each other
@@ -40,11 +40,14 @@
 //       state in the table, and a scene the run never visits is a skipped draw later). A list with a semicolon splits
 //       there instead, so values keep their commas ('SEATS=-1,0,1;-2,-2'); --scene NAME=value (repeatable) is one run
 //       with the whole value.
-//   --carts finds the project from the working directory (the nearest directory with build/cart-wgpu/carts) when
-//       neither CW_PROJECT_ROOT nor --build names it, and reads its app list from its build/native, else its
-//       build/cart-wgpu: a game's checkout runs it with no --build.
+//   --carts finds the project from the working directory (the nearest directory with a build: build/cart-wgpu/carts,
+//       build/cart-wgpu/apps or build/native/apps, no higher than the checkout's root) when neither CW_PROJECT_ROOT
+//       (an override) nor --build names it, and reads its app list from its build/native, else its build/cart-wgpu:
+//       a game's checkout runs node deps/cartwheel-sdk/<target>/tools/programs.mjs --carts with no --build and no
+//       CW_PROJECT_ROOT. Every run-cart it starts is told the project (CW_PROJECT_ROOT in its environment), so it
+//       loads the project's carts, not the SDK's.
 //   node tools/programs.mjs ... --dry
-//       only reports each app's missing states (out/programs-survey.json)
+//       only reports each app's missing states (the project's out/programs-survey.json)
 //   node tools/programs.mjs --projects [project dir ...]
 //       the same for projects (editor/templates/*, docs/tutorials/*/project by
 //       default): built with tools/cwproject.mjs, run natively, their states
@@ -527,9 +530,11 @@ if (CARTS && !argv.includes('--no-run')) {
   const cartDir = join(PROJ, 'build', 'cart-wgpu', 'carts');
   const have = existsSync(cartDir) ? readdirSync(cartDir).filter((f) => f.endsWith('.wasc')).map((f) => f.slice(0, -5)) : [];
   const todo = names.length ? names : have;
-  // a survey of nothing is a failure, not "0 states": name the directory it looked in (CW_PROJECT_ROOT picks a project's)
-  if (!todo.length) throw new Error(`no dual carts to survey in ${cartDir} (build them: scripts/build.sh; a project's carts need CW_PROJECT_ROOT)`);
-  for (const n of todo) if (!have.includes(n)) throw new Error(`no dual cart ${n} in ${cartDir} (build it: scripts/build.sh; a project's carts need CW_PROJECT_ROOT)`);
+  // a survey of nothing is a failure, not "0 states": name the directory it looked in (run from inside the game's
+  // checkout, or name it with CW_PROJECT_ROOT or --build <project>/build/native)
+  const where = '(build them: scripts/build.sh; run it inside the game\'s checkout, or name the project with CW_PROJECT_ROOT)';
+  if (!todo.length) throw new Error(`no dual carts to survey in ${cartDir} ${where}`);
+  for (const n of todo) if (!have.includes(n)) throw new Error(`no dual cart ${n} in ${cartDir} ${where}`);
   console.log(`surveying ${todo.length} dual cart(s) from ${cartDir}`);
   const failed = []; // every run that surveyed nothing: "<run> on the <leg> host: why"
   if (argv.includes('--gl-only') && argv.includes('--webgpu-only')) throw new Error('--gl-only and --webgpu-only leave no host');
@@ -541,14 +546,14 @@ if (CARTS && !argv.includes('--no-run')) {
     const runs0 = [{ tag: app, args: ['--frames', frames] }, ...PRESETS.filter((p) => p !== 'high').map((p) => ({ tag: `${app}.${p}`, args: ['--frames', frames, '--start-cmds', `quality ${p}`] }))];
     // the preset switched in play, both ways (the cart starts on High)
     for (const [from, to] of switches(PRESETS))
-      runs.push({ tag: `${app}.${from}-to-${to}`, args: ['--frames', frames, '--start-cmds', [...(from !== 'high' ? [`quality ${from}`] : []), `@${switchAt} quality ${to}`].join(';')] });
+      runs0.push({ tag: `${app}.${from}-to-${to}`, args: ['--frames', frames, '--start-cmds', [...(from !== 'high' ? [`quality ${from}`] : []), `@${switchAt} quality ${to}`].join(';')] });
     for (const g of gates.filter((x) => x.app === app))
-      runs.push({ tag: g.name, args: ['--frames', String(g.frames), ...(g.input ? ['--input', join(PROJ, 'tests', g.input)] : [])] });
+      runs0.push({ tag: g.name, args: ['--frames', String(g.frames), ...(g.input ? ['--input', join(PROJ, 'tests', g.input)] : [])] });
     // as a player's host runs it: no seed, so the warm-up spreads over frames under the loading screen (its slices draw
     // the scene in parts) and the clock is real; a deterministic run does the warm-up in one frame and never shows them
-    runs.push({ tag: `${app}.player`, args: ['--frames', frames, '--warmup-spread'] });
+    runs0.push({ tag: `${app}.player`, args: ['--frames', frames, '--warmup-spread'] });
     for (const g of gates.filter((x) => x.app === app))
-      runs.push({ tag: `${g.name}.player`, args: ['--frames', String(g.frames), '--warmup-spread', ...(g.input ? ['--input', join(PROJ, 'tests', g.input)] : [])] });
+      runs0.push({ tag: `${g.name}.player`, args: ['--frames', String(g.frames), '--warmup-spread', ...(g.input ? ['--input', join(PROJ, 'tests', g.input)] : [])] });
     // every run once per scene (--scenes / --scene): the cart reads the variable through its env request (run-cart --env)
     const runs = cartScenes.flatMap((sc, k) => runs0.map((r) => (Object.keys(sc).length
       ? { tag: `${r.tag}.scene${k}`, args: [...r.args, '--env', JSON.stringify(sc)], label: sceneLabel(sc) } : r)));
@@ -557,7 +562,8 @@ if (CARTS && !argv.includes('--no-run')) {
     for (const run of runs) for (const [leg, legArgs] of legs) {
       const stateFile = join(runDir, `${run.tag}.${leg}.cmd.json`);
       const r = spawnSync(process.execPath, [join(ROOT, 'tools', 'run-cart.mjs'), '--host', 'romdev', '--app', app, ...run.args, ...legArgs, '--cmd-end', 'pipeline', '--cmd-out', stateFile],
-        { encoding: 'utf8', timeout: 600000, env: testEnv({ ...process.env }) });
+        // the project found here, not run-cart's own default (the tree it sits in: an SDK's has no carts of the game)
+        { encoding: 'utf8', timeout: 600000, env: testEnv({ ...process.env, CW_PROJECT_ROOT: PROJ }) });
       const got = cartSurvey(stateFile);
       const why = r.status !== 0 ? `run failed (${r.signal || 'exit ' + r.status}): ${(r.stderr || r.stdout || '').trim().split('\n').slice(-1)[0]}` : got.why;
       if (why) { failed.push(`${run.tag}${run.label ? ' (' + run.label + ')' : ''} on the ${leg} host: ${why}`); console.log(`cart ${run.tag} (${leg}): FAILED: ${why}`); continue; }
@@ -660,8 +666,8 @@ if (argv.includes('--dry')) {
     const st = [...new Set(logDirs.map((d) => join(d, `${a.name}.log`)).flatMap(statesOf))].sort();
     if (st.length) out[a.name] = st;
   }
-  mkdirSync(join(ROOT, 'out'), { recursive: true });
-  writeFileSync(join(ROOT, 'out', 'programs-survey.json'), JSON.stringify(out, null, 1) + '\n');
+  mkdirSync(join(PROJ, 'out'), { recursive: true });
+  writeFileSync(join(PROJ, 'out', 'programs-survey.json'), JSON.stringify(out, null, 1) + '\n');
   for (const [n, st] of Object.entries(out)) console.log(`${n}: ${st.length}`);
   console.log(`${new Set(Object.values(out).flat()).size} distinct states over ${Object.keys(out).length} apps`);
   process.exit(0);
