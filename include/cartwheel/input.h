@@ -201,7 +201,11 @@ typedef struct cw_action_value {
 /* Set one action of one player for this tick (the others keep what the devices gave). */
 bool cw_input_set_action(int player, cw_action a, float strength);
 /* Set a whole seat for this tick: every action of the player released, then each listed one set (an action listed
- * twice: the last wins; an invalid action in the list is skipped). count 0 releases the seat. */
+ * twice: the last wins; an invalid action in the list is skipped). count 0 releases the seat. The release covers what
+ * the seat's devices gave too: on a seat a person also plays (a pad, the keyboard, touch), every button they hold that
+ * the list leaves out reads as up, every tick the call is made. A bot or autopilot sharing a seat with a device sets
+ * only its own actions with cw_input_set_action; this call is for a seat with no devices (a CPU seat, cw_input_assign
+ * (seat, -1, 0)) or a test that owns the seat whole. */
 bool cw_input_set_actions(int player, const cw_action_value *values, int count);
 /* A stick for this tick: v in screen space (x right, y down, as cw_input_vector returns it; longer than 1 is cut to
  * 1) onto the four actions' strengths, so cw_input_vector over the same actions reads v back (up to quantization).

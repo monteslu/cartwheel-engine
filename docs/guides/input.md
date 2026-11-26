@@ -252,6 +252,7 @@ The CPUs press first in the tick, then the rules read every seat:
 
 What a set does:
 
+- `cw_input_set_actions` releases every action of the seat first, so on a seat that also has a pad, keyboard or touch (a test bot or an autopilot helping a person) it swallows every button the person holds that the call does not list, each tick it is called. There, set only the actions the bot drives with `cw_input_set_action` (or `cw_input_set_vector`); the others keep what the devices gave. `cw_input_set_actions` is for a seat with no devices: a CPU seat, or a test that owns the seat whole.
 - It replaces what that player's devices gave the action for this tick only. The next tick starts again from the devices, so an action held for many ticks is set every tick. A CPU seat has no devices: the shell assigns it `cw_input_assign(seat, -1, 0)` ([The game shell](guide:game-shell)).
 - Strength is 0 to 1, quantized like a pad's; it counts as pressed at or above the action's dead zone.
 - It works only inside `fixed_update` (the tick context); anywhere else it returns false and logs once.
