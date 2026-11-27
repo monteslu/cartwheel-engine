@@ -10520,7 +10520,7 @@
      "default": "\"\"",
      "stored": true,
      "readonly": false,
-     "doc": "A glTF mesh: \"file.glb#mesh/m/p\" one primitive, or \"file.glb\" (one mesh) its primitives as parts (a trunk and a crown); its LOD chains give the LODs."
+     "doc": "A glTF mesh: \"file.glb#mesh/m/p\" one primitive, or \"file.glb\" (one mesh) its primitives as parts (a trunk and a crown); its LOD chains give the LODs. Set on a live layer it swaps the mesh at once (the same places)."
     },
     {
      "name": "color",

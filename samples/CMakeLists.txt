@@ -157,6 +157,8 @@ cw_add_app(anim_feet SOURCES anim_feet/main.c ASSETS ${CW_FEET_ASSETS})
 # one walk and one punch on three skeletons (cartwheel/retarget.h): the robot's clips baked onto generated
 # people by cwpack and retargeted at load from C; an AnimationTree from scene text layers the punch over the walk
 cw_add_app(anim_retarget SOURCES anim_retarget/main.c PACK ${CMAKE_CURRENT_SOURCE_DIR}/anim_retarget/project/roots.txt)
+# what one AnimationTree evaluation costs on a game-sized character (60 bones, a shooter's graph): the guide's numbers
+cw_add_app(anim_tree_cost SOURCES anim_tree_cost/main.c)
 # knocked down, falls, gets up (cartwheel/ragdoll.h): RobotExpressive (CC0) staged from anim_ik with its license
 set(CW_RAGDOLL_ASSETS ${CMAKE_CURRENT_BINARY_DIR}/ragdoll_assets)
 file(MAKE_DIRECTORY ${CW_RAGDOLL_ASSETS})
