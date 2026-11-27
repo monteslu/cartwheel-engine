@@ -335,6 +335,8 @@ const cw_rt *cw__pipeline_rt_find(cw_pipeline *p, const char *key);
  * issue. false when the frame's queue is full. */
 bool cw__pipeline_queue_view(cw_pipeline *p, cw_node camera, const cw_rt *rt, int slot, void (*done)(void *user, float cpu_ms), void *user);
 void cw__rt_destroy(cw_rt *rt);
+/* GL: moves on whenever a target's textures are deleted (velocity.c keeps framebuffers of other targets' textures) */
+extern unsigned cw__rt_gl_generation;
 void cw__pass_state_reset(void);
 /* split screen in one pass: the view rectangle the pass helpers scissor to (pixels of a full_w x full_h target,
  * from the bottom left); on = false outside a view run. A bound target of another size gets the rectangle scaled

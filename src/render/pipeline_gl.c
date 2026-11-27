@@ -140,11 +140,13 @@ bool cw__rt_create(cw_rt *rt, int w, int h, cw_rt_format f, bool depth) {
   return true;
 }
 
+unsigned cw__rt_gl_generation;
 void cw__rt_destroy(cw_rt *rt) {
   if (wg()) {
     cw__pw_rt_destroy(rt);
     return;
   }
+  if (rt->tex || rt->depth_tex) cw__rt_gl_generation++; /* (a texture name may come back for another target) */
   if (rt->fbo) glDeleteFramebuffers(1, &rt->fbo);
   if (rt->tex) glDeleteTextures(1, &rt->tex);
   if (rt->depth_tex) glDeleteTextures(1, &rt->depth_tex);

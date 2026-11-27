@@ -15,7 +15,15 @@
  * no previous pose and counts as still. Nothing is copied or uploaded for a mesh that stood still: the
  * previous pose is kept by swapping two buffers when the pose changed, and the bone and instance textures
  * are written only for the meshes drawn. Blended materials are left to the camera's motion (they write no
- * depth); so are sprites, points and lines. */
+ * depth); so are sprites, points and lines.
+ *
+ * GL: the previous poses go up in one run before the draws, into textures the engine owns (three.c binds them
+ * as they are), not one upload between each pair of draws (a texture written while earlier draws may still
+ * read it costs the GPU a wait on some drivers, every time); the framebuffer of the velocity target with the
+ * scene's depth is made once per pair of textures and kept. CW_TEST_VELOCITY_LEGACY=1 (a gate control) draws
+ * the way it did before both: three.c's data textures, uploaded as each mesh is drawn, and the framebuffer
+ * attached and checked every frame. CW_TEST_VELOCITY_HASH=1 reads the velocity target back after the pass
+ * (GL) into cw.velocity.hash, so a gate can hold the two ways to the same bits. */
 #include <stdlib.h>
 #include <string.h>
 
@@ -47,7 +55,17 @@ typedef struct vel_obj {
   bool inst_same; /* inst[1] was not written: the last frame's matrices are inst[0]'s */
   t3_texture *inst_tex;
   uint64_t inst_tex_frame; /* the frame the texture holds the previous matrices of (+ 1) */
+  /* GL: bone_tex and inst_tex wrap these engine-made textures (adopted: three.c never uploads to them), and
+   * what was last uploaded to each, so an unchanged pose is not sent again */
+  bool gl_owned;
+  unsigned bone_gl, inst_gl;
+  int inst_gl_rows;
+  float *bone_up, *inst_up;
+  int inst_up_n, inst_up_rows;
 } vel_obj;
+
+/* a framebuffer of a velocity target's colour with the scene's depth (GL), kept while both textures live */
+typedef struct vel_fbo { unsigned fbo, color, depth, gen; int w, h; bool ok; } vel_fbo;
 
 typedef struct vel_state {
   cw_map objs; /* object id -> vel_obj* */
@@ -55,9 +73,13 @@ typedef struct vel_state {
   t3_renderer *hook;
   uint64_t frame; /* the pipeline frame being drawn (+ 1) */
   t3_mat4 view_proj, prev_view_proj;
-  unsigned fbo; /* GL: the velocity colour with the scene's depth */
+  unsigned fbo; /* GL (CW_TEST_VELOCITY_LEGACY): the velocity colour with the scene's depth, attached each frame */
+  vel_fbo fbos[2]; /* GL: one per velocity target (they alternate by frame parity), with the depth attached */
+  unsigned fbo_cur; /* (the one gl_fbo picked) */
+  int fbo_last;     /* (its slot) */
   int32_t drawn, tracked;
-  bool fields;
+  uint32_t hash; /* CW_TEST_VELOCITY_HASH: the velocity target's bits after the pass */
+  bool fields, hash_field;
 } vel_state;
 
 static void obj_free(vel_obj *e) {
@@ -65,8 +87,10 @@ static void obj_free(vel_obj *e) {
   cw_free(e->bones[1]);
   cw_free(e->inst[0]);
   cw_free(e->inst[1]);
-  if (e->bone_tex) t3_release(e->bone_tex);
+  if (e->bone_tex) t3_release(e->bone_tex); /* (an adopted texture deletes its GL texture) */
   if (e->inst_tex) t3_release(e->inst_tex);
+  cw_free(e->bone_up);
+  cw_free(e->inst_up);
   cw_free(e);
 }
 
@@ -76,7 +100,11 @@ static void state_free(void *p) {
     if (cw_map_live(&v->objs, i)) obj_free((vel_obj *)(uintptr_t)v->objs.vals[i]);
   cw_map_free(&v->objs);
   if (v->mat) t3_release(v->mat);
-  if (v->fbo && cw_gpu_backend() != CW_GPU_WEBGPU) glDeleteFramebuffers(1, &v->fbo);
+  if (cw_gpu_backend() != CW_GPU_WEBGPU) {
+    if (v->fbo) glDeleteFramebuffers(1, &v->fbo);
+    for (int i = 0; i < 2; i++)
+      if (v->fbos[i].fbo) glDeleteFramebuffers(1, &v->fbos[i].fbo);
+  }
   cw_free(v);
 }
 
@@ -94,6 +122,10 @@ static vel_state *state_of(cw_tree *t) {
 static bool objects_off(void) {
   const char *e = cw_test_env("CW_TEST_VELOCITY_OBJECTS");
   return e && *e == '0';
+}
+static bool test_on(const char *name) {
+  const char *e = cw_test_env(name);
+  return e && *e == '1';
 }
 
 /* this frame's pose of a mesh into its record; true when it differs from the last frame's */
@@ -114,6 +146,9 @@ static bool obj_update(vel_state *v, vel_obj *e, t3_object *o) {
       }
       if (e->bone_tex) t3_release(e->bone_tex);
       e->bone_tex = NULL;
+      e->bone_gl = 0;
+      cw_free(e->bone_up);
+      e->bone_up = NULL;
       e->nb = nb;
       fresh = true;
     }
@@ -265,6 +300,120 @@ static void obj_textures(vel_state *v, vel_obj *e, const t3_object *o) {
   }
 }
 
+/* GL: a float texture the engine makes and three.c binds as it is (nearest, one level) */
+static t3_texture *gl_float_texture(unsigned *name, int w, int h) {
+  glGenTextures(1, name);
+  glBindTexture(GL_TEXTURE_2D, *name);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, w, h, 0, GL_RGBA, GL_FLOAT, NULL);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  t3_texture *t = t3_texture_from_gl(*name, w, h, 1, false, true);
+  t->min_filter = t->mag_filter = T3_NEAREST;
+  t->wrap_s = t->wrap_t = T3_CLAMP_TO_EDGE;
+  t->generate_mipmaps = false;
+  return t;
+}
+
+/* GL: the textures a mesh about to be drawn reads, written now (all of a frame's before its first draw) */
+static void obj_textures_gl(vel_state *v, vel_obj *e, const t3_object *o) {
+  if (!e->gl_owned) { /* (made the other way: CW_TEST_VELOCITY_LEGACY was switched) */
+    if (e->bone_tex) t3_release(e->bone_tex);
+    if (e->inst_tex) t3_release(e->inst_tex);
+    e->bone_tex = e->inst_tex = NULL;
+    e->bone_gl = e->inst_gl = 0;
+    e->gl_owned = true;
+  }
+  if (o->type == T3_SKINNED_MESH) {
+    int w = e->nb * 4;
+    size_t bytes = (size_t)e->nb * 16 * sizeof(float);
+    if (!e->bone_tex) {
+      e->bone_tex = gl_float_texture(&e->bone_gl, w, 2);
+      if (!e->bone_up) e->bone_up = cw_alloc(bytes * 2, CW_MEM_RENDER);
+      memset(e->bone_up, 0xff, bytes * 2); /* (no bits a pose can have: the first frame uploads) */
+    }
+    /* row 0 this frame's, row 1 the last frame's, one upload (bone_up holds the two rows as the texture does) */
+    float *up1 = e->bone_up + (size_t)e->nb * 16;
+    if (memcmp(e->bone_up, e->bones[0], bytes) != 0 || memcmp(up1, e->bones[1], bytes) != 0) {
+      memcpy(e->bone_up, e->bones[0], bytes);
+      memcpy(up1, e->bones[1], bytes);
+      glBindTexture(GL_TEXTURE_2D, e->bone_gl);
+      glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, 2, GL_RGBA, GL_FLOAT, e->bone_up);
+    }
+  } else if (o->type == T3_INSTANCED_MESH) {
+    int rows = (e->inst_n * 4 + VEL_INST_W - 1) / VEL_INST_W;
+    if (e->inst_tex && e->inst_gl_rows < rows) {
+      t3_release(e->inst_tex);
+      e->inst_tex = NULL;
+    }
+    if (!e->inst_tex) {
+      e->inst_tex = gl_float_texture(&e->inst_gl, VEL_INST_W, rows);
+      e->inst_gl_rows = rows;
+      e->inst_tex_frame = 0;
+      e->inst_up_n = 0;
+    }
+    if (e->inst_tex_frame != v->frame) {
+      const float *prev = e->inst_same ? e->inst[0] : e->inst[1];
+      size_t bytes = (size_t)e->inst_n * 16 * sizeof(float);
+      if (e->inst_up_n != e->inst_n || memcmp(e->inst_up, prev, bytes) != 0) {
+        /* (whole rows, one upload: the staging copy is the texture's size, the texels past the last instance unread) */
+        if (!e->inst_up || e->inst_up_rows < rows) {
+          cw_free(e->inst_up);
+          e->inst_up = cw_calloc((size_t)rows * VEL_INST_W * 4, sizeof(float), CW_MEM_RENDER);
+          e->inst_up_rows = rows;
+        }
+        memcpy(e->inst_up, prev, bytes);
+        e->inst_up_n = e->inst_n;
+        glBindTexture(GL_TEXTURE_2D, e->inst_gl);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, VEL_INST_W, rows, GL_RGBA, GL_FLOAT, e->inst_up);
+      }
+      e->inst_tex_frame = v->frame;
+    }
+  }
+}
+
+/* GL: the framebuffer of this velocity target with the scene's depth (made once, kept: the targets alternate) */
+static bool gl_fbo(vel_state *v, const cw_rt *vel, unsigned depth) {
+  vel_fbo *f = NULL;
+  for (int i = 0; i < 2 && !f; i++) {
+    vel_fbo *c = &v->fbos[i];
+    if (c->fbo && c->color == vel->tex && c->depth == depth && c->w == vel->w && c->h == vel->h && c->gen == cw__rt_gl_generation) {
+      f = c;
+      v->fbo_last = i;
+    }
+  }
+  if (!f) { /* a new pair, or a target remade since: a free or stale slot, else the one not used last */
+    int k = -1;
+    for (int i = 0; i < 2 && k < 0; i++)
+      if (!v->fbos[i].fbo || v->fbos[i].gen != cw__rt_gl_generation) k = i;
+    if (k < 0) k = v->fbo_last ^ 1;
+    v->fbo_last = k;
+    f = &v->fbos[k];
+    if (!f->fbo) glGenFramebuffers(1, &f->fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, f->fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, vel->tex, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depth, 0);
+    f->ok = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    f->color = vel->tex, f->depth = depth, f->w = vel->w, f->h = vel->h, f->gen = cw__rt_gl_generation;
+  }
+  v->fbo_cur = f->fbo;
+  return f->ok;
+}
+
+/* CW_TEST_VELOCITY_HASH: the velocity target's texels (GL) */
+static void read_hash(vel_state *v, const cw_rt *vel) {
+  v->hash = 0;
+  if (cw_gpu_backend() == CW_GPU_WEBGPU || !vel->fbo) return;
+  size_t n = (size_t)vel->w * vel->h * 4;
+  float *px = cw_alloc(n * sizeof(float), CW_MEM_RENDER);
+  glBindFramebuffer(GL_FRAMEBUFFER, vel->fbo);
+  glReadPixels(0, 0, vel->w, vel->h, GL_RGBA, GL_FLOAT, px);
+  v->hash = cw_hash32(px, n * sizeof(float), 2166136261u);
+  cw_free(px);
+  cw__pass_state_reset();
+}
+
 /* records of meshes that are gone (not looked at for a while) */
 static void sweep(vel_state *v) {
   if (v->frame % 256 != 0) return;
@@ -288,7 +437,17 @@ int cw__velocity_objects(cw_pass_ctx *ctx, const cw_rt *vel) {
     cw_debug_i32("cw.velocity.tracked", &v->tracked); /* meshes whose pose is kept */
   }
   v->drawn = 0;
-  if (objects_off()) return 0;
+  bool hash = test_on("CW_TEST_VELOCITY_HASH");
+  if (hash && !v->hash_field) {
+    v->hash_field = true;
+    cw_debug_u32("cw.velocity.hash", &v->hash); /* (CW_TEST_VELOCITY_HASH) the velocity target after the pass */
+  }
+  if (objects_off()) {
+    if (hash) read_hash(v, vel);
+    return 0;
+  }
+  bool legacy = test_on("CW_TEST_VELOCITY_LEGACY");
+  bool gl = cw_gpu_backend() != CW_GPU_WEBGPU;
   v->frame = ctx->frame + 1;
   v->view_proj = ctx->view_proj;
   v->prev_view_proj = ctx->prev_view_proj;
@@ -313,7 +472,18 @@ int cw__velocity_objects(cw_pass_ctx *ctx, const cw_rt *vel) {
       vel_draw *d = &draws.data[i];
       uint64_t val = 0;
       cw_map_get(&v->objs, d->m->base.id, &val);
-      obj_textures(v, (vel_obj *)(uintptr_t)val, &d->m->base);
+      vel_obj *e = (vel_obj *)(uintptr_t)val;
+      if (gl && !legacy) obj_textures_gl(v, e, &d->m->base);
+      else {
+        if (e->gl_owned) { /* (made the GL way: CW_TEST_VELOCITY_LEGACY was switched on) */
+          if (e->bone_tex) t3_release(e->bone_tex);
+          if (e->inst_tex) t3_release(e->inst_tex);
+          e->bone_tex = e->inst_tex = NULL;
+          e->bone_gl = e->inst_gl = 0;
+          e->gl_owned = false;
+        }
+        obj_textures(v, e, &d->m->base);
+      }
       /* one material for every group of the mesh, its own put back after the draw */
       d->mats = d->m->materials;
       d->n = d->m->material_count;
@@ -342,7 +512,35 @@ int cw__velocity_objects(cw_pass_ctx *ctx, const cw_rt *vel) {
       t3_renderer_set_external_target(r, NULL);
     } else
 #endif
-    {
+    if (!legacy) {
+      /* (the textures written above were bound on unit 0 by the engine: three.c binds its own) */
+      t3_renderer_reset_bindings(r);
+      if (gl_fbo(v, vel, ctx->scene->depth_tex)) {
+        /* (the depth texture is attached, so no unit may still sample it) */
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glViewport(0, 0, vel->w, vel->h);
+        int bw, bh, vx, vy, vw, vh, sx, sy, sw, sh;
+        t3_renderer_get_size(r, &bw, &bh);
+        t3_renderer_get_viewport(r, &vx, &vy, &vw, &vh);
+        bool st = t3_renderer_get_scissor(r, &sx, &sy, &sw, &sh);
+        bool auto_clear = t3_renderer_get_auto_clear(r);
+        t3_renderer_set_framebuffer(r, v->fbo_cur);
+        t3_renderer_set_viewport(r, 0, bh - vel->h, vel->w, vel->h);
+        t3_renderer_set_scissor(r, 0, bh - vel->h, vel->w, vel->h);
+        t3_renderer_set_scissor_test(r, true);
+        t3_renderer_set_auto_clear(r, false);
+        t3_renderer_render(r, sc, ctx->camera);
+        t3_renderer_set_auto_clear(r, auto_clear);
+        t3_renderer_set_viewport(r, vx, vy, vw, vh);
+        t3_renderer_set_scissor(r, sx, sy, sw, sh);
+        t3_renderer_set_scissor_test(r, st);
+        t3_renderer_set_framebuffer(r, ctx->pipeline->bound_fbo);
+        t3_renderer_reset_bindings(r);
+      }
+      /* the depth stays attached (to a framebuffer no pass binds): a later pass may sample it */
+      cw__pass_state_reset();
+    } else {
       if (!v->fbo) glGenFramebuffers(1, &v->fbo);
       glBindFramebuffer(GL_FRAMEBUFFER, v->fbo);
       glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, vel->tex, 0);
@@ -390,5 +588,6 @@ int cw__velocity_objects(cw_pass_ctx *ctx, const cw_rt *vel) {
   cw_array_free(&hidden);
   cw_array_free(&draws);
   sweep(v);
+  if (hash) read_hash(v, vel);
   return v->drawn;
 }

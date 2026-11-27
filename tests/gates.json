@@ -5082,6 +5082,11 @@
     "note": "the velocity buffer of the same scene: the bar's turn, the character's limbs and the two counter-turning rings. Control: camera motion only, an all-grey frame"
   },
   {
+    "name": "velocity-objects",
+    "script": "tests/velocity-objects.mjs",
+    "note": "the GL velocity pass's moved meshes with their previous poses uploaded in one run before the draws and the target's framebuffer kept (src/render/velocity.c): samples/motion_vectors with its crowd (MV_CROWD=1, 63 meshes in the velocity target: skinned, instanced and plain) reads back the same velocity buffer bit for bit (cw.velocity.hash) and the same picture as the way before (CW_TEST_VELOCITY_LEGACY=1), at frames 75 and 200; CONTROL: camera motion only (CW_TEST_VELOCITY_OBJECTS=0) must change the hash; native GL"
+  },
+  {
     "name": "motion-vectors",
     "script": "tests/motion-vectors.mjs",
     "note": "TAA error against a 36-sample picture of the same frame over each mover (a turning mesh, a skinned character, an instanced swarm, post_stack's bar), GL and WebGPU: with the mover's own motion at most 0.8 of the error with camera motion only; control: camera motion only in both runs must fail"

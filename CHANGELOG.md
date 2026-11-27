@@ -4,6 +4,18 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.86.0 (2026-11-27)
+
+### Changed
+
+- **The GL velocity pass costs half what it did with many moving meshes** (`src/render/velocity.c`): the moved meshes' previous poses (bone matrices, previous instance matrices) are uploaded in one run before the first draw, each into a texture the engine owns and three.c binds as it is, instead of three.c uploading each mesh's data texture just before that mesh's draw (a texture written while earlier draws may still read it makes some drivers wait for them, every time); the framebuffer of each velocity target with the scene's depth is made once and kept, not attached, checked and detached every frame. The velocity buffer is the same bits. `samples/motion_vectors` with `MV_CROWD=1` (63 meshes in the velocity target: 33 skinned walkers, 13 instanced swarms written every frame, 17 turning meshes) on a Navi 33: GL velocity pass 0.56 to 0.29 ms, frame 1.64 to 1.36 ms; WebGPU unchanged at 0.14 ms.
+- **three.c v0.187.23**: on GL the per-draw uniform blocks of every render call and shadow caster pass are slices of a fenced ring buffer instead of an orphaned buffer per call (a split-screen race made 3742 of those stores in 600 frames, now 150 in all, most at load), and each draw's bone matrices and morph influences are slices of a second ring, bound by range, instead of being written into the program's one buffer the draw before may still read.
+
+### Added
+
+- `samples/motion_vectors`: `MV_CROWD=1` (the crowd above) and debug fields `gpu.scene`, `gpu.velocity`, `gpu.frame` (the pipeline's GPU timers).
+- Gate `velocity-objects`: natively on GL the crowd's velocity target, read back as floats after the pass (`CW_TEST_VELOCITY_HASH=1`: `cw.velocity.hash`), and the picture equal bit for bit to the way before (`CW_TEST_VELOCITY_LEGACY=1`) at frames 75 and 200; control: camera motion only must change the hash.
+
 ## v0.85.0 (2026-11-27)
 
 ### Added
