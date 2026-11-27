@@ -65,8 +65,11 @@
  *     clarity              metres of water over which the shallow colour has
  *                          become deep_color (5)
  *     see_through          metres of water over which a submerged object (a hull, legs) fades out of
- *                          sight through the surface, blurred and tinted (0.4; 0 = off). Needs the
- *                          floor map and the refraction (High and up)
+ *                          sight through the surface, blurred and tinted (0.4; 0 = off): the
+ *                          scattering length, over the light's two-way path down to it and back up
+ *                          the refracted view ray. Unchanged at the line, so the contact has no step.
+ *                          About 0.07 for a murky harbour, 0.2 coastal, 0.5 clear tropical water (the
+ *                          water guide). Needs the floor map and the refraction (High and up)
  *     see_night            the share of that visibility that stays at night (0.05)
  *     shore_foam           width in metres of the foam where the water meets
  *                          the floor (0.7; 0 = none)
@@ -189,6 +192,28 @@ bool cw_water_sample_at(cw_node water, float x, float z, double t, cw_water_samp
 /* The Water3D's waves, as cw_waves (for cw_waves_* in its local space). */
 bool cw_water_get_waves(cw_node water, cw_waves *out);
 
+/* The caustics the surface draws on the floor, for a part that draws the same light on what is under the water
+ * (a hull, legs). tile: the caustic tile, RGBA8, repeating, mipmapped (R the sharp web, G a soft copy, each stored
+ * as a quarter: multiply by 4); tile_metres: one tile's size; clock: the surface's foam clock (s, mod 1000), which
+ * scrolls the two copies; strength: the caustics property, 0 under Medium; sun: the world direction toward the
+ * light the water takes as its sun. The floor's recipe, at a point P under the surface by depth (m):
+ *   q = (P.xz + sun.xz / max(sun.y, 0.3) * depth * 0.75) / tile_metres
+ *   k1 = tile(q + (0.013, 0.007) * clock).rg, k2 = tile(q * 1.31 + (0.41, 0.17) - (0.006, 0.011) * clock).rg
+ *   soft = smoothstep(0.5, 4, depth), kc = dot(min(k1, k2), (1 - soft, soft)) * 4
+ *   fade = smoothstep(0.02, 0.5, depth) * exp(-depth * 1.6 / clarity) * smoothstep(0, 0.25, sun.y)
+ *   light = 1 + strength * fade * (kc * 2.2 - 1)
+ * False (out zeroed) for a node that is not a Water3D or before its first draw made the tile. The texture is the
+ * water's: do not release it. */
+typedef struct cw_water_caustics_info {
+  struct t3_texture *tile;
+  float tile_metres;
+  float clock;
+  float strength;
+  t3_vec3 sun;
+} cw_water_caustics_info;
+/* Fills out with the caustics of a Water3D (above): false and zeroed for a non-Water3D or before its first draw. */
+bool cw_water_caustics(cw_node water, cw_water_caustics_info *out);
+
 /* A map of how free the waves are (0..1, nx x nz floats, row z, col x, over
  * the node's rectangle, clamped at its edge): each wave's height there is
  * multiplied by 1 + (mask - 1) * wave_shelter[i]. So the same swell can be
@@ -198,10 +223,11 @@ bool cw_water_get_waves(cw_node water, cw_waves *out);
  * it smooth: the normal ignores its slope. The map is copied. NULL removes it. */
 void cw_water_set_wave_mask(cw_node water, const float *mask, int nx, int nz);
 
-/* Leave a node's tree out of the water's refraction (at most 16 nodes). A hull
- * riding the waves crosses the rest level the refraction is clipped at, and the
- * part under it, seen through a surface it is not actually under, draws a large
- * ghost on the water behind it: floating craft belong in this list. */
+/* Leave a node's tree out of the water's refraction (at most 16 nodes): for what
+ * must not show through the surface at all. Floating craft and riders belong IN the
+ * refraction: it is clipped at the highest the waves reach, so their part under the
+ * moving surface shows through it (a point above the surface is never shown as under
+ * it), and hiding them cuts them off at the line. The reflection still has them. */
 void cw_water_refraction_hide(cw_node water, cw_node n);
 
 /* The water's baked floor: metres of water over the floor at world (x, z)

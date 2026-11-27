@@ -4,6 +4,16 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.87.0 (2026-11-27)
+
+### Changed
+
+- **Where things go into the water, the line is the water's, not a cut** (`cartwheel/water.h`, the water guide, "Seeing what is just under the surface" and "Hulls in the refraction"): the refraction is clipped at the highest the surface reaches (the rest level plus the live swell's summed amplitude and 5 cm) instead of the rest level, so the part of a hull or a leg under a crest is in it and shows through the surface in front of it, where it was cut off at the surface in a pixel; a point the higher clip lets in above the real surface is read as nothing seen. The planar reflection is clipped under the rest level by the summed amplitude (at most 0.5 m), so on a trough what is under the rest level but out of the water is mirrored. The refraction's offset grows with the water over what it shows (nothing at the line, whole 1 m down), and a bent read that lands on another surface than the straight one, or above the surface, uses the straight one: the picture under the surface joins the object above it without a sideways jump and with no halo. An object seen through the water fades over the light's two-way path, down to it and back up the refracted view ray (`exp(-(z + z / cos t) / (2 see_through))`, as before straight down), its colours absorbed by the water's `clarity` as the floor's are, its tint and blur growing from nothing at the line. Measured in `water_contact` (gate `water-contact`, GL and WebGPU): a shin 1 cm under the line keeps 1.00 to 1.04 of its luminance 1 cm above at the crest, trough, rising and falling (the water before: 2.01 at the crest, the shin cut off); its contrast fades 90 to 10 % over 20.6 cm with `clarity` 2 and `see_through` 0.07, 32 to 36 cm with 5 and 0.2, 70.5 cm with 9 and 0.5; its middle moves under 0.5 cm across the line, with `distortion` 0.1 too (the offset whatever the depth: 1.3 to 3.2 cm). Water with no option set draws differently only at waterlines: `water-default-look`'s reference is drawn again (0.24 % of its pixels moved, at the boat's and crates' waterlines).
+
+### Added
+
+- `cw_water_caustics` (`cartwheel/water.h`): the caustic tile, its size, clock, strength and sun the surface draws on the floor with, and the floor's recipe, for a part that lights what is under the water the same way.
+- Sample `water_contact` (a shin and a hull riding a 2.16 m swell through the surface; `CW_TEST_WC_PHASE`, `CW_TEST_WC_VIEW`, `CW_TEST_WC_NONE`) and gate `water-contact`. Test switches `CW_TEST_WATER_REST_CLIP=1`, `CW_TEST_WATER_CONTACT=old|offset|path` (the look before, for the controls).
 ## v0.86.0 (2026-11-27)
 
 ### Changed

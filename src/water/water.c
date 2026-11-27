@@ -311,6 +311,18 @@ bool cw_water_get_waves(cw_node water, cw_waves *out) {
   return true;
 }
 
+bool cw_water_caustics(cw_node water, cw_water_caustics_info *out) {
+  water3d *d = cw_node_data_t(water, water_t);
+  memset(out, 0, sizeof *out);
+  if (!d || !d->caus_tex) return false;
+  out->tile = d->caus_tex;
+  out->tile_metres = d->caustic_size > 0.05f ? d->caustic_size : 0.05f;
+  out->clock = d->foam_time;
+  out->strength = cw__water_quality() >= CW_QUALITY_MEDIUM ? d->caustics : 0.0f;
+  out->sun = (t3_vec3){ d->sun[0], d->sun[1], d->sun[2] };
+  return true;
+}
+
 /* world <-> the node's local frame (rest plane y = 0) */
 static void to_local(cw_node n, float x, float z, float *lx, float *lz, t3_mat4 *inv) {
   const t3_mat4 *m = cw_node3d_global_transform(n);
@@ -804,6 +816,7 @@ static t3_render_target *refr_target(t3_render_target *rt, int w, int h, bool de
 
 static t3_vec3 v3sub(t3_vec3 a, t3_vec3 b) { return (t3_vec3){ a.x - b.x, a.y - b.y, a.z - b.z }; }
 static t3_vec3 v3add(t3_vec3 a, t3_vec3 b) { return (t3_vec3){ a.x + b.x, a.y + b.y, a.z + b.z }; }
+static t3_vec3 v3scale(t3_vec3 a, float s) { return (t3_vec3){ a.x * s, a.y * s, a.z * s }; }
 static float v3dot(t3_vec3 a, t3_vec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 /* three.js Vector3.reflect(normal): v - 2 (v . n) n */
 static t3_vec3 v3reflect(t3_vec3 v, t3_vec3 n) {
@@ -869,6 +882,16 @@ static void render_into(cw_pass_ctx *ctx, water_tree *wt, t3_render_target *rt, 
   render_scene_into(ctx, wt, rt, cam, ctx->scene3d);
 }
 
+/* how far above the rest level the refraction is clipped, and below it the reflection: the live swell's summed
+ * amplitude (d->sun[3], this frame's) plus 5 cm, and that amplitude capped at 0.5 m (more starts mirroring the floor of
+ * the shallows). CW_TEST_WATER_REST_CLIP=1: both at the rest level, as before v0.87 (the gates' control) */
+static bool water_rest_clip(void) {
+  const char *e = cw_test_env("CW_TEST_WATER_REST_CLIP");
+  return e && atoi(e) > 0;
+}
+static float water_refr_lift(const water3d *d) { return water_rest_clip() ? 0.0f : d->sun[3] + 0.05f; }
+static float water_refl_drop(const water3d *d) { return water_rest_clip() ? 0.0f : CW_MIN(d->sun[3], 0.5f); }
+
 /* the refraction: three.c's render target on GL; on WebGPU a target of the engine's own whose depth is copied for
  * the surface to read (refraction_wgpu.c). cam NULL: cleared, 1 x 1 */
 static void render_refr(cw_pass_ctx *ctx, water_tree *wt, water3d *d, t3_camera *cam, int w, int h) {
@@ -924,6 +947,9 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
   t3_vec3 cpos = { cam->base.matrix_world.e[12], cam->base.matrix_world.e[13], cam->base.matrix_world.e[14] };
   /* the camera under the water sees no reflection from above (r187 skips the render) */
   bool below = v3dot(v3sub(wpos, cpos), up) > 0;
+  /* the camera under the drawn waves (this view's): what the refraction is drawn for. A camera in a trough is under the
+   * rest level but above the water, and the surface it sees is seen from above */
+  bool under = water_rest_clip() ? below : d->cam_under;
   bool first = !d->refl;
   d->refl = target(d->refl, d->refl_on ? w : 1, d->refl_on ? h : 1);
   /* always with a depth texture (1 x 1 when off): the surface's program samples one in every state */
@@ -952,7 +978,11 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
     t3_object_look_at(v, tgt.x, tgt.y, tgt.z);
     t3_object_update_matrix_world(v, true);
     v->projection_matrix = ctx->proj;
-    oblique(&v->projection_matrix, &v->matrix_world_inverse, up, wpos);
+    /* clipped a little under the rest level (the live swell's summed amplitude, at most 0.5 m): on a trough the part of
+     * a hull or a leg under the rest level is above the real surface, and its reflection must meet it there */
+    /* (no deeper than 0.3 m under the camera: the mirrored camera must stay under the plane, and well under it) */
+    float drop = CW_MAX(0.0f, CW_MIN(water_refl_drop(d), v3dot(v3sub(cpos, wpos), up) - 0.3f));
+    oblique(&v->projection_matrix, &v->matrix_world_inverse, up, v3sub(wpos, v3scale(up, drop)));
     t3_mat4_invert(&v->projection_matrix_inverse, &v->projection_matrix);
     /* backdrops lighting the scene (cartwheel/backdrop.h environment): where the mirrored view finds nothing of the
      * scene it shows their worlds, the environment's sharpest level drawn as its background (the backdrops are as far
@@ -990,19 +1020,27 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
     wt->bg_scene->background = s3->has_background ? s3->background : c;
     render_scene_into(ctx, wt, d->refl, v, wt->bg_scene);
   }
-  if (d->refr_on && !below) {
-    /* r187 Refractor: the view's own camera, clipped to below the rest level */
+  if (d->refr_on && !under) {
+    /* r187 Refractor: the view's own camera, clipped to below the highest the surface reaches (the rest level plus the
+     * live swell's summed amplitude and 5 cm), not the rest level: on a crest a hull's and a rider's submerged part is
+     * above the rest level, and the surface in front of it must see it. What the clip now lets in above the moving
+     * surface (a dry part beside the contact) the surface's program reads as not under the water (its leak check) */
     t3_object_set_matrix_world(v, &cam->base.matrix_world);
     v->projection_matrix = ctx->proj;
     t3_mat4 vi;
     t3_mat4_invert(&vi, &cam->base.matrix_world);
-    oblique(&v->projection_matrix, &vi, v3neg(up), wpos);
+    /* (and 0.3 m under the camera: an oblique near plane must lie in front of it, and one a few centimetres under it
+     * leaves the depth too coarse to read, measured as banding; only what lies within 0.3 m under the camera and
+     * under a surface no higher than that is lost, a camera skimming the water) */
+    float lift = CW_MIN(water_refr_lift(d), v3dot(v3sub(cpos, wpos), up) - 0.3f);
+    if (water_rest_clip()) lift = 0;
+    oblique(&v->projection_matrix, &vi, v3neg(up), v3add(wpos, v3scale(up, lift)));
     t3_mat4_invert(&v->projection_matrix_inverse, &v->projection_matrix);
     render_refr(ctx, wt, d, v, w, h);
     memcpy(d->refr_inv, v->projection_matrix_inverse.e, sizeof d->refr_inv);
     d->refr_depth_ok = cw__wgpu_on() ? d->wg_dep_tex != NULL : d->refr->depth_texture != NULL;
     v->base.matrix_world_external = false;
-  } else if (below && (d->refr_on || d->refl_on)) {
+  } else if (under && (d->refr_on || d->refl_on)) {
     /* under the water: the refraction target holds the view up through the surface (the scene above the rest
      * level), which the surface shows inside its window of light */
     /* (three.c's own target on both backends: it draws the sky behind the scene, and no depth is read from below) */
@@ -1071,6 +1109,16 @@ static void fill(t3_extension_ctx *c, void *user) {
   t3_extension_set_uniform(c, "waterPhase", d->ev.ph, 4);
   v[0] = d->crest_light, v[1] = d->refr_on ? d->see_through : 0.0f, v[2] = d->see_light, v[3] = d->cam_tan2;
   t3_extension_set_uniform(c, "waterCrest", v, 4);
+  {
+    /* the contact (water_shading.mjs): the refraction's offset is whole 1 m under the surface and nothing at it; the
+     * leak check's bound 0.3 m; the two-way path. CW_TEST_WATER_CONTACT (the gates' controls): "offset" the offset
+     * whatever the depth and no leak check, "path" the vertical depth alone, "old" both (the look before v0.87) */
+    const char *e = cw_test_env("CW_TEST_WATER_CONTACT");
+    bool old = e && !strcmp(e, "old");
+    bool off = old || (e && !strcmp(e, "offset")), path = old || (e && !strcmp(e, "path"));
+    v[0] = off ? 0.0f : 1.0f, v[1] = off ? 0.0f : 0.3f, v[2] = path ? 0.0f : 1.0f, v[3] = 0;
+    t3_extension_set_uniform(c, "waterContact", v, 4);
+  }
   v[0] = d->grid_off[0], v[1] = d->grid_off[1], v[2] = d->grid_mode == 1 ? 1.0f : 0.0f, v[3] = d->foam_scale;
   t3_extension_set_uniform(c, "waterGrid", v, 4);
   t3_extension_set_uniform(c, "waterShelter", d->ev.shelter, 4);
@@ -1421,7 +1469,7 @@ static const cw_prop water_props[] = {
   CW_PROP_FIELD_RANGE(water3d, floor_range, CW_T_FLOAT, 1, 1000, "Metres under the rest level the floor rays probe."),
   CW_PROP_FIELD(water3d, shallow_color, CW_T_COLOR, CW_PROP_DEFAULT, "Colour of the water over a shallow floor (linear)."),
   CW_PROP_FIELD_RANGE(water3d, clarity, CW_T_FLOAT, 0.01, 1000, "Metres of water over which the shallow colour has become deep_color."),
-  CW_PROP_FIELD_RANGE(water3d, see_through, CW_T_FLOAT, 0, 20, "Metres of water over which a submerged object (a hull, a rider's legs) fades out of sight through the surface, blurred and tinted by the water: about 0.4 for slightly cloudy water, more for clear water (0: objects are not drawn through the surface blurred and faded, the old look). Needs the floor map and the refraction (High and up); scaled by the light reaching the water, so night shows far less."),
+  CW_PROP_FIELD_RANGE(water3d, see_through, CW_T_FLOAT, 0, 20, "Metres of water over which a submerged object (a hull, a rider's legs) fades out of sight through the surface, blurred and tinted by the water, over the light's two-way path down to it and back up the refracted view: unchanged at the line, gone a little deeper. About 0.07 for a murky harbour, 0.2 coastal, 0.4 slightly cloudy, 0.5 clear tropical water (0: objects are not drawn through the surface blurred and faded, the old look). Needs the floor map and the refraction (High and up); scaled by the light reaching the water, so night shows far less."),
   CW_PROP_FIELD_RANGE(water3d, see_night, CW_T_FLOAT, 0, 1, "The share of see_through's visibility that stays with no sun (night): the light reaching the water scales it between this (plus a little for the sky's own night light) and 1 by day. 1 ignores the light."),
   CW_PROP_FIELD_RANGE(water3d, shore_foam, CW_T_FLOAT, 0, 20, "Width in metres of the foam where the water meets the floor (0: none)."),
   CW_PROP_FIELD_RANGE(water3d, crest_foam, CW_T_FLOAT, 0, 1, "Foam on crests where the surface bunches up (0: none)."),

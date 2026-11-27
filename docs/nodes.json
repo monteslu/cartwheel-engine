@@ -11678,7 +11678,7 @@
      "readonly": false,
      "min": 0,
      "max": 20,
-     "doc": "Metres of water over which a submerged object (a hull, a rider's legs) fades out of sight through the surface, blurred and tinted by the water: about 0.4 for slightly cloudy water, more for clear water (0: objects are not drawn through the surface blurred and faded, the old look). Needs the floor map and the refraction (High and up); scaled by the light reaching the water, so night shows far less."
+     "doc": "Metres of water over which a submerged object (a hull, a rider's legs) fades out of sight through the surface, blurred and tinted by the water, over the light's two-way path down to it and back up the refracted view: unchanged at the line, gone a little deeper. About 0.07 for a murky harbour, 0.2 coastal, 0.4 slightly cloudy, 0.5 clear tropical water (0: objects are not drawn through the surface blurred and faded, the old look). Needs the floor map and the refraction (High and up); scaled by the light reaching the water, so night shows far less."
     },
     {
      "name": "see_night",

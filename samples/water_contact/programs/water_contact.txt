@@ -1,0 +1,11 @@
+# r187 program states water_contact draws (cmake/programs.cmake, tools/programs.mjs)
+standard+senv+ds+l1000+xwaterlow
+# surveyed (tools/programs.mjs): 4 state(s) the runs drew
+standard+senv+l1000
+standard+shadow+senv+ds+l1000+xwater
+standard+senv+l1000+xplain
+depth+xplain
+# closure (tools/programs.mjs): 3 state(s), the surveyed materials in the environments surveyed for their class
+standard+senv+ds+l1000+xwater
+standard+shadow+senv+ds+l1000+xwaterlow
+standard+shadow+senv+l1000
