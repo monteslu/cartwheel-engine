@@ -378,7 +378,10 @@ export async function applyWater({ TSL, THREE, mat, props, sentinel }, low) {
       const tintN = mix(vec3(1), tint.rgb, scat);
       const absN = exp(vec3(0.45, 0.065, 0.035).mul(shore.z).mul(5).mul(zc.mul(twoWay).mul(2)).negate());
       const tintC = mix(tint.rgb.mul(exp(vec3(-0.9, -0.15, -0.08).mul(zc))), tintN.mul(absN), contact.z);
-      o.assign(vec4(sumC.div(5).mul(tintC).mul(crestLight.z), sumV.div(5).mul(crestLight.z)));
+      // (the light reaching the water scales what shows below the first 10 cm: at the line the object is lit as it is
+      // above the surface, by day or by a lamp at night, and its picture already holds that light)
+      const lightZ = mix(crestLight.z, mix(float(1), crestLight.z, smoothstep(0, 0.1, zc)), contact.z);
+      o.assign(vec4(sumC.div(5).mul(tintC).mul(lightZ), sumV.div(5).mul(lightZ)));
     });
     return o;
   })();
