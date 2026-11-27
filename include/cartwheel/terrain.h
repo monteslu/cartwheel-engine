@@ -110,7 +110,10 @@
  *                     cast_shadow, seed; wind, smooth_alpha,
  *                     two_sided_lighting, fade_mode, lod_blend, tint_jitter,
  *                     root_from_terrain, bend (around movers),
- *                     shadow_at_root, shadow_soften. */
+ *                     shadow_at_root, shadow_soften. Any property set
+ *                     on a live layer applies at the next tick (or at
+ *                     once through cw_terrain_of): a new mesh replaces
+ *                     the old one in the same places. */
 #ifndef CW_TERRAIN_H
 #define CW_TERRAIN_H
 

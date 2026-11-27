@@ -144,6 +144,8 @@ A scatter layer ([cw_terrain_scatter_add](api:cw_terrain_scatter_add), or a [Ter
 
 A glTF mesh's primitives (a trunk and a crown) draw as parts that share one instance buffer, and a cwpack LOD chain gives the LODs. A part with fewer LODs than the first (leaf cards that do not simplify) keeps drawing its coarsest one at the coarser levels.
 
+A TerrainScatter3D property set while the game runs applies at the next tick, or at once when the game reads the terrain through [cw_terrain_of](api:cw_terrain_of). That includes `mesh`: setting it on a live layer (curved grass blades in place of flat cards, a season's trees) loads the new mesh and draws it in the same places. Before v0.85.0 the layer kept the meshes it had loaded and the swap did nothing. `unit_terrain` holds it (`scatter_mesh_swap`); its control brings back the old cache and must see the old mesh still drawn.
+
 ### Grass and foliage
 
 The built-in `GRASS` shape is a tuft of 12 curved blades of three segments each, tapering from 3 cm at the root to a point and leaning out by a fifth to three fifths of their height, drawn both ways round with one normal bent toward the sky, so a blade is lit the same from either side. Its vertex colours run from a dark root to a lighter tip, a few blades drier than the rest; its far LOD has 6 wider straight blades that cover the same ground. Each instance's colour varies (`tint_jitter`, 0.25 for GRASS: brightness, and a dry yellow or a deep green), so no two tufts match.

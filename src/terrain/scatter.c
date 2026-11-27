@@ -352,6 +352,11 @@ static void cell_reset(tr_scatter *s, sc_cell *c) {
   for (int v = 0; v < TR_VIEWS; v++) c->v[v].posed_state = -2;
 }
 
+t3_geometry *cw__scatter_geometry(const cw_terrain *t, int layer, int lod, int part) {
+  const tr_scatter *s = t && layer >= 0 && layer < TR_MAX_SCATTER ? t->scatter[layer] : NULL;
+  return s && lod >= 0 && lod < CW_SCATTER_LODS && part >= 0 && part < CW_SCATTER_PARTS ? s->def.geometry[lod][part] : NULL;
+}
+
 void cw__scatter_free(tr_scatter *s) {
   if (!s) return;
   gen_collect(s, true);

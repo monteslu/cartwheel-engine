@@ -151,6 +151,7 @@ float cw__terrain_far(const cw_terrain *t);
 
 /* scatter.c */
 void cw__scatter_free(tr_scatter *s);
+t3_geometry *cw__scatter_geometry(const cw_terrain *t, int layer, int lod, int part); /* a layer's mesh (tests) */
 void cw__scatter_update(cw_terrain *t, t3_vec3 cam, const t3_mat4 *vp, int view, int views);
 void cw__scatter_attach(cw_terrain *t, tr_scatter *s);
 void cw__scatter_shift(cw_terrain *t, t3_vec3 d);

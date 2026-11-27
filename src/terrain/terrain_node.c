@@ -63,11 +63,15 @@ typedef struct scatter3d {
                               * is applied again once the file system changes (cw_vfs_generation past map_gen) */
   uint32_t map_gen;
   cw_res res[CW_SCATTER_PARTS];
+  const char *res_mesh;      /* the mesh value res[] was loaded for (interned): another one releases them first */
 } scatter3d;
 
 /* the test seam for tests/unit/test_terrain.c's control: true brings back the old lazy sync (cw_terrain_of applies a
  * changed scatter child only when the Terrain3D itself is dirty, and a missing density map is read once) */
 bool cw__terrain_lazy_scatter_test;
+/* the test seam for the mesh swap's control: true brings back the old cache (the parts loaded for the first mesh are
+ * kept, so a mesh set on a live layer changes nothing) */
+bool cw__terrain_keep_meshes_test;
 
 static const char *const shape_names[] = { "GRASS", "ROCK", "TREE", NULL };
 static const char *const knob_names[] = { "GRASS", "SCATTER", NULL };
@@ -246,13 +250,17 @@ static void scatter_remove(cw_terrain *t, scatter3d *s) {
   s->layer = -1;
 }
 
-static void scatter_destroy(cw_node n, void *data) {
-  (void)n;
-  scatter3d *s = data;
+static void scatter_release_meshes(scatter3d *s) {
   for (int p = 0; p < CW_SCATTER_PARTS; p++) {
     if (s->res[p].id) cw_res_release(s->res[p]);
     s->res[p] = (cw_res){ 0 };
   }
+  s->res_mesh = NULL;
+}
+
+static void scatter_destroy(cw_node n, void *data) {
+  (void)n;
+  scatter_release_meshes(data);
 }
 
 /* (re)add the layer to the parent's terrain */
@@ -264,7 +272,10 @@ static void scatter_apply(cw_node n, scatter3d *s, cw_terrain *t) {
   t3_geometry *gs[CW_SCATTER_LODS][CW_SCATTER_PARTS] = { { 0 } };
   t3_material *ms[CW_SCATTER_LODS][CW_SCATTER_PARTS] = { { 0 } };
   bool own = true;
+  /* a mesh set on a live layer (swapped in at run time): the parts loaded for the old one go, so the new one loads */
+  if (s->res_mesh != s->mesh && !cw__terrain_keep_meshes_test) scatter_release_meshes(s);
   if (s->mesh && *s->mesh) {
+    s->res_mesh = s->mesh;
     /* "file.glb#mesh/m/p": that primitive; "file.glb": mesh 0's primitives, each a part */
     bool one = strchr(s->mesh, '#') != NULL;
     int parts = 1;
@@ -367,7 +378,7 @@ static void scatter_exit(cw_node n, void *data) {
 static const cw_prop scatter_props[] = {
   { .name = "shape", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = offsetof(scatter3d, shape), .size = sizeof(int),
     .enum_names = shape_names, .doc = "Built-in mesh when `mesh` is empty: GRASS (tufts), ROCK, TREE (two LODs each, vertex coloured)." },
-  CW_PROP_FIELD(scatter3d, mesh, CW_T_STRING, CW_PROP_DEFAULT, "A glTF mesh: \"file.glb#mesh/m/p\" one primitive, or \"file.glb\" (one mesh) its primitives as parts (a trunk and a crown); its LOD chains give the LODs."),
+  CW_PROP_FIELD(scatter3d, mesh, CW_T_STRING, CW_PROP_DEFAULT, "A glTF mesh: \"file.glb#mesh/m/p\" one primitive, or \"file.glb\" (one mesh) its primitives as parts (a trunk and a crown); its LOD chains give the LODs. Set on a live layer it swaps the mesh at once (the same places)."),
   CW_PROP_FIELD(scatter3d, color, CW_T_COLOR, CW_PROP_DEFAULT, "Tint of the built-in meshes."),
   CW_PROP_FIELD_RANGE(scatter3d, density, CW_T_FLOAT, 0, 16, "Instances per square metre at full density."),
   CW_PROP_FIELD(scatter3d, density_map, CW_T_STRING, CW_PROP_DEFAULT, "Grey image over the whole terrain scaling the density (empty = 1). A path not written yet (a map the game makes in its init) leaves the layer empty until the file is written; set from code, cw_terrain_of applies it at once."),

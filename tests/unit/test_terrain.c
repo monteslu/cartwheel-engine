@@ -33,6 +33,7 @@
 #include <string.h>
 
 #include "cartwheel/physics_nodes.h"
+#include "cartwheel/resource.h"
 #include "cartwheel/scene_file.h"
 #include "cartwheel/terrain.h"
 #include "cartwheel/vehicle3d.h"
@@ -532,6 +533,7 @@ static void test_scene_file(void) {
 
 /* ── density map written late ── */
 extern bool cw__terrain_lazy_scatter_test; /* src/terrain/terrain_node.c: the old lazy sync (the control) */
+extern bool cw__terrain_keep_meshes_test; /* src/terrain/terrain_node.c: the old mesh cache (the mesh swap's control) */
 
 /* a grey 8-bit PNG (stored deflate blocks): the test writes its own density map */
 static uint32_t png_crc(const uint8_t *p, size_t n, uint32_t c) {
@@ -664,6 +666,107 @@ static void test_density_map_late(void) {
   cw_vfs_remove("late_density.png");
 }
 
+/* a one-primitive glTF of n triangles stacked up a blade (1: a flat card; 3: one that bends back as it rises), its
+ * buffer a data URI */
+static void blade_gltf(const char *path, int tris) {
+  enum { MAXV = 32 };
+  float pos[MAXV * 3], nrm[MAXV * 3];
+  int nv = tris * 3;
+  for (int i = 0; i < nv; i++) {
+    int k = i / 3, c = i % 3;
+    float y = (float)(k + (c == 2)) / (float)tris, x = c == 0 ? -0.05f : c == 1 ? 0.05f : 0;
+    pos[i * 3] = x, pos[i * 3 + 1] = y, pos[i * 3 + 2] = 0.1f * y * y;
+    nrm[i * 3] = 0, nrm[i * 3 + 1] = 0, nrm[i * 3 + 2] = 1;
+  }
+  uint8_t raw[MAXV * 6 * 4];
+  size_t nb = (size_t)nv * 12;
+  memcpy(raw, pos, nb);
+  memcpy(raw + nb, nrm, nb);
+  static const char b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  char enc[MAXV * 6 * 4 * 2];
+  size_t e = 0, len = nb * 2;
+  for (size_t i = 0; i < len; i += 3) {
+    uint32_t v = (uint32_t)raw[i] << 16 | (i + 1 < len ? (uint32_t)raw[i + 1] << 8 : 0) | (i + 2 < len ? raw[i + 2] : 0);
+    enc[e++] = b64[v >> 18 & 63], enc[e++] = b64[v >> 12 & 63];
+    enc[e++] = i + 1 < len ? b64[v >> 6 & 63] : '=', enc[e++] = i + 2 < len ? b64[v & 63] : '=';
+  }
+  enc[e] = 0;
+  size_t cap = e + 2048;
+  char *json = cw_alloc(cap, CW_MEM_GAME);
+  int n = snprintf(json, cap,
+    "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],\"nodes\":[{\"mesh\":0}],"
+    "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"NORMAL\":1},\"material\":0}]}],"
+    "\"materials\":[{\"pbrMetallicRoughness\":{\"metallicFactor\":0}}],"
+    "\"buffers\":[{\"byteLength\":%zu,\"uri\":\"data:application/octet-stream;base64,%s\"}],"
+    "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":%zu},{\"buffer\":0,\"byteOffset\":%zu,\"byteLength\":%zu}],"
+    "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":%d,\"type\":\"VEC3\",\"min\":[-0.05,0,0],\"max\":[0.05,1,0.1]},"
+    "{\"bufferView\":1,\"componentType\":5126,\"count\":%d,\"type\":\"VEC3\"}]}",
+    len, enc, nb, nb, nb, nv, nv);
+  CHECK(cw_vfs_write(path, json, (size_t)n));
+  cw_free(json);
+}
+
+static const char swap_scene[] =
+  "[scene format=1]\n\n"
+  "[node name=\"Root\" type=\"Node3D\"]\n\n"
+  "[node name=\"Ground\" parent=\".\" type=\"Terrain3D\"]\n"
+  "size_x = 64\nsize_z = 64\nregion_size = 32\n"
+  "min_height = 0\nmax_height = 40\n"
+  "heightmap = \"heights.r16\"\n\n"
+  "[node name=\"Grass\" parent=\"Ground\" type=\"TerrainScatter3D\"]\n"
+  "mesh = \"blade_flat.gltf#mesh/0/0\"\ndensity = 0.5\nmin_slope = 90\nseed = 6\n";
+
+/* a live layer's mesh swapped at run time (curved blades for flat ones) draws the new mesh: before v0.85.0 the parts
+ * loaded for the old one were kept and the swap did nothing. CONTROL: that old cache (cw__terrain_keep_meshes_test) */
+static void test_scatter_mesh_swap(void) {
+  blade_gltf("blade_flat.gltf", 1);
+  blade_gltf("blade_curved.gltf", 3);
+  cw_res flat = cw_res_load("blade_flat.gltf#mesh/0/0", CW_RES_MESH), curved = cw_res_load("blade_curved.gltf#mesh/0/0", CW_RES_MESH);
+  const cw_mesh *fm = cw_res_mesh(flat), *cm = cw_res_mesh(curved);
+  CHECK(fm && cm && fm->lod[0] && cm->lod[0] && fm->lod[0] != cm->lod[0]);
+  cw_packed_scene *ps = cw_scene_parse(swap_scene, "terrain_swap.cwscene");
+  CHECK(ps != NULL);
+  if (!ps || !fm || !cm || !fm->lod[0] || !cm->lod[0]) {
+    cw_res_release(flat), cw_res_release(curved);
+    return;
+  }
+  cw_tree *tree = cw_tree_new();
+  cw_node root = cw_scene_instance(ps);
+  cw_node_add_child(cw_tree_root(tree), root);
+  cw_node ground = cw_node_get(root, "Ground"), grass = cw_node_get(ground, "Grass");
+  cw_terrain *t = cw_terrain_of(ground);
+  CHECK(t != NULL);
+  CHECK(cw__scatter_geometry(t, 0, 0, 0) == fm->lod[0]);
+  static float inst[5 * 4096];
+  int before = cw_terrain_scatter_cell(t, 0, 0, 0, inst, 4096);
+  /* the control: the same mesh set again keeps the layer's mesh */
+  cw_node_set(grass, "mesh", cw_val_string("blade_flat.gltf#mesh/0/0"));
+  t = cw_terrain_of(ground);
+  CHECK(cw__scatter_geometry(t, 0, 0, 0) == fm->lod[0]);
+  /* the swap: applied the same tick (cw_terrain_of) */
+  cw_node_set(grass, "mesh", cw_val_string("blade_curved.gltf#mesh/0/0"));
+  t = cw_terrain_of(ground);
+  CHECK(cw__scatter_geometry(t, 0, 0, 0) == cm->lod[0]);
+  CHECK(cw__scatter_geometry(t, 0, 0, 0) != fm->lod[0]);
+  CHECK(before > 0 && cw_terrain_scatter_cell(t, 0, 0, 0, inst, 4096) > 0); /* still placed */
+  /* and back, by the next fixed tick */
+  cw_node_set(grass, "mesh", cw_val_string("blade_flat.gltf#mesh/0/0"));
+  cw_tree_fixed_update(tree, 1.0 / 60);
+  CHECK(cw__scatter_geometry(cw_terrain_of(ground), 0, 0, 0) == fm->lod[0]);
+  /* CONTROL: the old cache keeps the first mesh's parts, so the swap does nothing (the bug) */
+  cw__terrain_keep_meshes_test = true;
+  cw_node_set(grass, "mesh", cw_val_string("blade_curved.gltf#mesh/0/0"));
+  t = cw_terrain_of(ground);
+  CHECK(cw__scatter_geometry(t, 0, 0, 0) == fm->lod[0]); /* the control must show the bug */
+  cw__terrain_keep_meshes_test = false;
+  int ntri = cm->lod_triangles[0];
+  FOLD(ntri);
+  FOLD(before);
+  cw_tree_free(tree);
+  cw_res_release(flat), cw_res_release(curved);
+  cw_vfs_remove("blade_flat.gltf"), cw_vfs_remove("blade_curved.gltf");
+}
+
 /* Editing one height changes neighboring surface normals. Both texture
  * uploads must be invalidated, while unrelated control data stays cached. */
 static void test_height_texture_invalidation(void) {
@@ -695,4 +798,4 @@ static void test_height_texture_invalidation(void) {
 CW_TEST_SUITE("terrain", { "height_texture_invalidation", test_height_texture_invalidation }, { "height_exact", test_height_exact }, { "cdlod", test_cdlod }, { "physics", test_physics },
               { "vehicle", test_vehicle }, { "scatter", test_scatter }, { "scatter_part_lods", test_scatter_part_lods }, { "control", test_control },
               { "import", test_import }, { "scene_file", test_scene_file },
-              { "density_map_late", test_density_map_late })
+              { "density_map_late", test_density_map_late }, { "scatter_mesh_swap", test_scatter_mesh_swap })
