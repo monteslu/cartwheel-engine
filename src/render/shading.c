@@ -159,7 +159,7 @@ static const struct { const char *part, *module; } ENGINE_PARTS[] = {
   { "folalpha", "render" }, { "rim", "render" }, { "skinshade", "render" }, { "velbuf", "render" }, { "hfog", "fog" },
   { "meshdecal", "fx" }, { "gi", "gi" }, { "gibuf", "gi" }, { "giproj", "gi" }, { "terrain", "terrain" },
   { "terrainlow", "terrain" }, { "terrainmin", "terrain" }, { "terrainfx", "terrain" }, { "terrainfxlow", "terrain" },
-  { "terrainfxmin", "terrain" }, { "terrainfar", "terrain" }, { "water", "water" }, { "waterlow", "water" },
+  { "terrainfxmin", "terrain" }, { "terrainfar", "terrain" }, { "water", "water" }, { "waterlow", "water" }, { "waterline", "waterline" },
 };
 static const char *engine_module(const char *name) {
   for (size_t i = 0; name && i < sizeof ENGINE_PARTS / sizeof ENGINE_PARTS[0]; i++)
@@ -459,7 +459,7 @@ void cw_shading_remove(t3_material *m, const char *name) {
  * program; from a caster, only when it moves nothing. A program with a part the material lacks is never taken. */
 static int drop_cost(const char *p, bool caster) {
   static const struct { const char *part; int cost; } LOOK[] = {
-    { "plain", 1 }, { "rim", 1 }, { "skinshade", 1 }, { "cluster", 2 }, { "clusteries", 2 }, { "csm", 2 }, { "gi", 2 }, { "hfog", 2 },
+    { "plain", 1 }, { "rim", 1 }, { "skinshade", 1 }, { "waterline", 1 }, { "cluster", 2 }, { "clusteries", 2 }, { "csm", 2 }, { "gi", 2 }, { "hfog", 2 },
   };
   for (size_t i = 0; i < sizeof LOOK / sizeof LOOK[0]; i++)
     if (!strcmp(LOOK[i].part, p)) return caster ? 0 : LOOK[i].cost;

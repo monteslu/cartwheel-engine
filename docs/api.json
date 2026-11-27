@@ -15808,7 +15808,7 @@
     {
      "name": "cw_shading_part_engine_owned",
      "signature": "bool cw_shading_part_engine_owned(const char *name)",
-     "doc": "The part names the engine owns (its modules' src/<module>/extensions/<part>.mjs): cluster, clusteries, csm, plain,\nhfog, gi, gibuf, giproj, foliage, folalpha, rim, skinshade, meshdecal, velbuf, terrain, terrainlow, terrainmin,\nterrainfx, terrainfxlow, terrainfxmin, terrainfar, water, waterlow. A game's cw_shading_part,\ncw_shading_part_everywhere, cw_shading_part_traits or cw_shading_part_batching with one of them (or a surface,\ncartwheel/surface.h, of that name) is refused with an error naming the part and its engine module: two parts of one\nname share one program state and one hook, so the engine's or the game's shading silently replaced the other. Name\nthe game's part something else.",
+     "doc": "The part names the engine owns (its modules' src/<module>/extensions/<part>.mjs): cluster, clusteries, csm, plain,\nhfog, gi, gibuf, giproj, foliage, folalpha, rim, skinshade, meshdecal, velbuf, terrain, terrainlow, terrainmin,\nterrainfx, terrainfxlow, terrainfxmin, terrainfar, water, waterlow, waterline. A game's cw_shading_part,\ncw_shading_part_everywhere, cw_shading_part_traits or cw_shading_part_batching with one of them (or a surface,\ncartwheel/surface.h, of that name) is refused with an error naming the part and its engine module: two parts of one\nname share one program state and one hook, so the engine's or the game's shading silently replaced the other. Name\nthe game's part something else.",
      "inline": false
     },
     {
@@ -19661,6 +19661,131 @@
      "doc": ""
     }
    ]
+  },
+  {
+   "header": "cartwheel/waterline.h",
+   "summary": "cartwheel/waterline.h: where an object meets the water (a shading part,\ncartwheel/shading.h): a rider's legs, a hull, a wading figure, a pier's legs.\n\nThe part shades the object itself, against the water's surface as it is at\nthe object (the waves' height and tilt, cw_water_sample_at):\n\n  wet band     everything under a high-water mark is wet: darker by the\n               surface's porosity (albedo x mix(1, 0.2, porosity), Lagarde's\n               wet-surface model: fabric darkens most, paint and rubber\n               hardly) and, for a surface that can shine, glossier with\n               beaded drops. Cloth stays matte (shine 0). The mark follows the\n               water up at once and falls back at `fall_rate` (2 cm/s) once\n               the water drops, and its top dries first, unevenly. A surface\n               that wicks (porosity) carries the band a few centimetres over\n               the line even in still water.\n  soak         a wetness over the whole surface (spray, a fall in the\n               water: cw_waterline_soak) that dries over `dry_time`.\n  meniscus     a thin line of sky light just over the contact, at least 1.5\n               pixels tall, where the water curves up to the object.\n  caustics     the light the waves gather into moving lines, on the part\n               under the surface, fading with depth by the water's clarity.\n               The water draws the submerged part through its refraction,\n               so they show through the surface; the absorption and murk of\n               the water on the way are the water's (Water3D see_through,\n               clarity), never the object's.\n\nUse: one cw_waterline per object that moves on its own (a craft, a rider, a\nwader), the part on every material of that object, and one update per\nfixed tick with the object's position:\n\n  cw_waterline *wl = cw_waterline_new(NULL);\n  cw_waterline_apply_tree(wl, rider_root, &(cw_waterline_look){ .porosity = 0.8f });   // a suit\n  ...fixed_update:\n  cw_waterline_update(wl, water, rider_origin, 0.5f, dt);\n  if (spray_hit) cw_waterline_soak(wl, 0.3f);\n\nThe values are per material, so two objects must not share a material\n(t3_material_clone one per object first; glTF instances share their file's\nmaterials). A material of an object out of the water (a craft in the air,\na wader on the beach) keeps its band and soak until they dry, and draws as\na plain material once they have.\n\nWorks on MeshStandardMaterial and MeshPhysicalMaterial, skinned or not,\nwith every other part (clustered lights, the cascaded sun, rim, skin\nshading, a game's surface named before \"waterline\", GI). Shadow casters are\nuntouched. Cost: a few dozen ALU operations and two caustic texture reads\nper pixel of the material; nothing for materials without it.\n\nProgram tables: a material with the part draws the composed state with\n\"waterline\" in its extension (xwaterline, xcluster_csm_waterline_gi, ...):\ntools/programs.mjs finds and adds those like any other state.",
+   "functions": [
+    {
+     "name": "cw_waterline_default",
+     "signature": "cw_waterline_desc cw_waterline_default(void)",
+     "doc": "the defaults above",
+     "inline": false
+    },
+    {
+     "name": "cw_waterline_new",
+     "signature": "cw_waterline *cw_waterline_new(const cw_waterline_desc *d)",
+     "doc": "A new waterline (d NULL: the defaults), dry and out of the water.",
+     "inline": false
+    },
+    {
+     "name": "cw_waterline_free",
+     "signature": "void cw_waterline_free(cw_waterline *w)",
+     "doc": "Takes the part off every material it is on and frees it (NULL: no-op).",
+     "inline": false
+    },
+    {
+     "name": "cw_waterline_set_desc",
+     "signature": "void cw_waterline_set_desc(cw_waterline *w, const cw_waterline_desc *d)",
+     "doc": "Replace the values (the state, mark and soak, stays).",
+     "inline": false
+    },
+    {
+     "name": "cw_waterline_apply",
+     "signature": "bool cw_waterline_apply(cw_waterline *w, t3_material *m, const cw_waterline_look *look)",
+     "doc": "Put the part on material m for object w, made of `look` (NULL: { 0.5, 0 }).\nm must be a MeshStandardMaterial or MeshPhysicalMaterial; false otherwise,\nor when m already carries CW_SHADING_MAX_PARTS parts. Applying again moves\nm to w with the new look. The material is retained until removed.",
+     "inline": false
+    },
+    {
+     "name": "cw_waterline_apply_tree",
+     "signature": "int cw_waterline_apply_tree(cw_waterline *w, t3_object *root, const cw_waterline_look *look)",
+     "doc": "The same for every material of every mesh under root (each once); returns how many.",
+     "inline": false
+    },
+    {
+     "name": "cw_waterline_remove",
+     "signature": "void cw_waterline_remove(t3_material *m)",
+     "doc": "m loses the part (no-op when it has none).",
+     "inline": false
+    },
+    {
+     "name": "cw_waterline_remove_tree",
+     "signature": "int cw_waterline_remove_tree(t3_object *root)",
+     "doc": "Every material under root loses it (call before releasing a model whose materials have it). Returns how many.",
+     "inline": false
+    },
+    {
+     "name": "cw_waterline_get",
+     "signature": "bool cw_waterline_get(const t3_material *m, cw_waterline **w, cw_waterline_look *look)",
+     "doc": "m has the part; its object and look into *w and *look when not NULL.",
+     "inline": false
+    },
+    {
+     "name": "cw_waterline_count",
+     "signature": "int cw_waterline_count(void)",
+     "doc": "Materials with the part now.",
+     "inline": false
+    },
+    {
+     "name": "cw_waterline_update",
+     "signature": "void cw_waterline_update(cw_waterline *w, cw_node water, t3_vec3 origin, float radius, float dt)",
+     "doc": "Once per fixed tick: the water at the object. `origin` is a point the\nobject carries (its node's world position): the mark is kept relative to\nit, so a band stays where it is on the object when the object leaves the\nwater (a craft in the air). The surface is fitted through the water's\nheight at origin and at four points `radius` metres around it (0: the\nheight and normal at origin alone); take about half the object's length.\nA null or non-Water3D `water` takes the object out of the water. dt: the\ntick's seconds. Deterministic (cw_water_sample_at).",
+     "inline": false
+    },
+    {
+     "name": "cw_waterline_update_plane",
+     "signature": "void cw_waterline_update_plane(cw_waterline *w, t3_vec3 origin, float height, t3_vec3 normal, float dt)",
+     "doc": "The surface given directly instead (a game's own water): world height of\nthe surface at origin and its unit normal.",
+     "inline": false
+    },
+    {
+     "name": "cw_waterline_soak",
+     "signature": "void cw_waterline_soak(cw_waterline *w, float amount)",
+     "doc": "Wet the whole surface by `amount` (0..1, adds up to 1: a wave over the\ndeck, spray, 1 for a fall in the water).",
+     "inline": false
+    },
+    {
+     "name": "cw_waterline_splash",
+     "signature": "void cw_waterline_splash(cw_waterline *w, float height)",
+     "doc": "Throw water `height` metres up the object over the line now (a slap of a\nwave, a splash): the mark rises to it and falls back as usual.",
+     "inline": false
+    },
+    {
+     "name": "cw_waterline_state_of",
+     "signature": "void cw_waterline_state_of(const cw_waterline *w, cw_waterline_state *out)",
+     "doc": "What w is doing now (zeroed for a NULL w).",
+     "inline": false
+    },
+    {
+     "name": "cw_waterline_set_sun",
+     "signature": "void cw_waterline_set_sun(t3_vec3 to_sun)",
+     "doc": "The light the submerged parts show (every waterline): the direction toward\nthe sun (world, unit; the default is a high sun), which projects the\ncaustics as the water's floor does. Setting it is a memory write.",
+     "inline": false
+    }
+   ],
+   "types": [
+    {
+     "name": "cw_waterline_look",
+     "doc": "What one material of the object is made of.",
+     "decl": "typedef struct cw_waterline_look {\n  float porosity; /* 0 sealed (paint, gelcoat, rubber) .. 1 absorbent (fabric): how much darker it gets wet */\n  float shine;    /* 0 stays matte when wet (cloth, the default) .. 1 a glossy wet film with beaded drops (paint 0.8, skin 0.4) */\n} cw_waterline_look;"
+    },
+    {
+     "name": "cw_waterline_desc",
+     "doc": "How the object's waterline behaves.",
+     "decl": "typedef struct cw_waterline_desc {\n  float wick;              /* metres the band stands over the line in still water, scaled by porosity (0.08) */\n  float fall_rate;         /* metres a second the high-water mark falls once the water dropped (0.02) */\n  float dry_time;          /* seconds a full soak takes to dry (9) */\n  float meniscus;          /* metres of the bright contact line (0.008; never under 1.5 pixels) */\n  float meniscus_strength; /* its brightness, emissive units over `sky` (0.25) */\n  t3_color sky;            /* the light the meniscus reflects (linear; 0.55, 0.68, 0.82) */\n  float wobble;            /* metres the line ripples along the object (0.006) */\n  float caustics;          /* strength of the caustics on the submerged part, times the Water3D's `caustics` (1) */\n} cw_waterline_desc;"
+    },
+    {
+     "name": "cw_waterline",
+     "doc": "",
+     "decl": "typedef struct cw_waterline cw_waterline;"
+    },
+    {
+     "name": "cw_waterline_state",
+     "doc": "What a waterline is doing (for a HUD, a sound, a test).",
+     "decl": "typedef struct cw_waterline_state {\n  bool in_water;  /* the surface is known and reaches within `radius` + 2 m of origin */\n  float level;    /* metres the surface stands over origin (negative: under it) */\n  float mark;     /* metres the high-water mark stands over origin */\n  float band;     /* metres of wet band over the line now (mark - level, 0 when under) */\n  float soak;     /* 0..1 */\n  t3_vec3 normal; /* the fitted surface's normal */\n} cw_waterline_state;"
+    }
+   ],
+   "macros": []
   }
  ]
 }

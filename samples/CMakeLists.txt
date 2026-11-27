@@ -374,6 +374,8 @@ cw_add_app(water_ripples SOURCES water_ripples/main.c ASSETS ${CMAKE_CURRENT_SOU
 cw_add_app(water_see_through SOURCES water_see_through/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/water_see_through/assets)
 # water: a shin and a hull riding a swell through the surface: the contact (soft by the water over it, not cut)
 cw_add_app(water_contact SOURCES water_contact/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/water_contact/assets PROGRAMS water_contact/programs/water_contact.txt)
+# water contact on objects: a wet band that dries, a meniscus line, caustics under the surface (cartwheel/waterline.h)
+cw_add_app(waterline SOURCES waterline/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/waterline/assets PROGRAMS waterline/programs/waterline.txt)
 cw_add_app(water_night SOURCES water_night/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/water_night/assets)
 # water: rings around the camera for an open sea, a wave mask for sheltered water, a ripple grid that follows
 cw_add_app(water_open_sea SOURCES water_open_sea/main.c ASSETS ${CMAKE_CURRENT_SOURCE_DIR}/water_open_sea/assets)

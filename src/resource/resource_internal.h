@@ -58,6 +58,7 @@ void cw__ktx2_init(void);
 void cw__gltf_shutdown(void);
 void cw__skin_shading_shutdown(void); /* src/render/skin_shading.c */
 void cw__rim_light_shutdown(void);     /* src/render/rim_light.c */
+void cw__waterline_shutdown(void);     /* src/waterline/waterline.c */
 void cw__foliage_shutdown(void);       /* src/render/foliage.c */
 void cw__surface_shutdown(void);       /* src/render/surface.c */
 

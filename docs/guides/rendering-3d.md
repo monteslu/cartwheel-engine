@@ -728,6 +728,28 @@ cw_rim_light_remove_tree(model_root);            /* before releasing the model: 
 
 The rim is per material: glTF instances share their file's materials, so clone one per character for a per-character colour (MeshInstance3D primitives of one look share one material in a tree too). It works with every other part (clustered lights, the cascaded sun, skin shading, GI) and costs a few instructions per pixel of the material; shadow casters are untouched and every preset draws it. Measured on a Radeon 890M in a split-screen shooter at 1920 x 1080, High preset, four to eight rimmed skinned characters (scene pass GPU ms, rims on against off, two interleaved runs each): GL one view 5.26 to 5.66 against 5.15 to 5.33, four views 5.2 to 5.5 against 5.21 to 5.34; WebGPU one view 4.08 to 4.7 against 4.36 to 4.75, four views 4.68 to 4.71 against 4.23. That is under the run-to-run noise on one view and about 0.45 ms on WebGPU with four views; a Vega 8 (about a quarter of an 890M) should stay under 1 ms. `samples/rim_light` shows two lines of figures from 3 m to 40 m with red and blue rims and a pulsing one; its gate is `rim-light`.
 
+### Waterline: where objects meet the water
+
+The **waterline** part ([waterline.h](header:waterline.h)) shades an object where it meets the water: a rider's legs, a hull, a wading figure, a pier's legs. Each object gets one `cw_waterline`, updated once per fixed tick against the water at the object (`cw_water_sample_at` at its origin and at four points `radius` metres around it, so a hull takes the swell's tilt), and the part goes on the object's materials with what each is made of:
+
+```c
+cw_waterline *wl = cw_waterline_new(NULL);                                  /* the defaults below */
+cw_waterline_apply_tree(wl, rider, &(cw_waterline_look){ .porosity = 0.5f }); /* a suit: darkens, stays matte */
+cw_waterline_apply(wl, hull_paint, &(cw_waterline_look){ .porosity = 0, .shine = 0.6f });
+/* fixed_update */
+cw_waterline_update(wl, water, origin, 1.4f, dt);
+if (spray) cw_waterline_soak(wl, 0.3f);                                    /* the whole surface, dries over dry_time */
+```
+
+What it draws, from the signed height of each pixel over the fitted surface:
+
+- **A wet band** under a high-water mark. The mark rises with the water at once and falls back at `fall_rate` (2 cm a second) once the water drops, and it is kept relative to the object's origin, so a band stays where it is on a craft that leaves the water. A porous surface wicks it `wick x porosity` higher (12 cm for fabric of porosity 1). Wet is Lagarde's wet surface: the albedo times `mix(1, 0.2, porosity)` (fabric darkens most, paint and gelcoat hardly), and a surface with `shine` above 0 gets a lower roughness and beaded drops, each with a point of sky light. Cloth keeps `shine` 0: it darkens, it never shines. The band's top dries first, softly and a little unevenly.
+- **A soak** over the whole surface (`cw_waterline_soak`: spray, a fall in the water), drying over `dry_time` (9 s).
+- **A meniscus**: a line of sky light `meniscus` tall (8 mm, never under 1.5 pixels) just over the contact, where the water curves up to the object.
+- **Caustics** on the part under the surface, the same tile and recipe as the water's floor (`caustics`, `caustic_size`, faded with depth by `clarity`; Medium and up), on the faces toward the sun (`cw_waterline_set_sun`). The water draws what is under it through its refraction, so they show through the surface; seen from under the water they are on the object itself. The water's absorption and murk are the water's, never the object's.
+
+The values are per material: two objects must not share one (clone a glTF's materials per object first, `t3_material_clone`). A material without its waterline's water (a craft in the air, a wader on the beach) keeps its band and soak until they dry. It composes with the lighting parts, rim, skin shading, GI and a game's surface named before `waterline`; shadow casters are untouched. The cost is a few dozen ALU operations and two caustic reads per pixel of a material that has it. `samples/waterline` stands a fabric shin, a bare calf and a painted hull in a gentle swell; its gate `waterline` reads a strip down the shin at native scale on GL and WebGPU at four phases of the swell (the band between the state's mark and the mark plus the wick, 0.25 to 0.8 of the dry brightness just over the line, a meniscus at least 1.05 x the band over it) and the submerged shin from under the water (the caustics), with the part off and the mark held at the line as controls that must fail.
+
 **Vertex cache order.** `cw_geometry_optimize_vertex_cache` reorders an indexed geometry's triangles for the GPU's post-transform cache (meshoptimizer's optimizeVertexCache) and reports the vertices shaded per triangle before and after. Meshes exported in modelling order can shade each vertex two or three times; already ordered ones (most of a character exporter's) gain little. Opaque meshes draw the same picture.
 
 ### Foliage: wind, smooth cut-outs, leaves lit from both sides

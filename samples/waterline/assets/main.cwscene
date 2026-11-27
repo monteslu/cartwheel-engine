@@ -1,0 +1,71 @@
+[scene format=1]
+
+[node name="Root" type="Node3D"]
+
+[node name="Post" parent="." type="PostProcess"]
+
+[node name="Sky" parent="." type="ProceduralSky"]
+sun = "../Sun"
+time_of_day = 11.5
+latitude = 40
+declination = 15
+north = 200
+
+[node name="Sun" parent="." type="DirectionalLight3D"]
+shadow = true
+shadow_extent = 12
+
+[node name="Camera" parent="." type="Camera3D"]
+position = vec3(0, 1.2, 3)
+rotation = vec3(-0.4363323, 0, 0)
+fov = 50
+far = 300
+
+[node name="Water" parent="." type="Water3D"]
+size = vec2(80, 80)
+subdivisions = 320
+floor_map_size = 256
+wave_count = 3
+wave0 = vec4(200, 46, 0.07, 0.6)
+wave1 = vec4(216, 9, 0.03, 0.6)
+wave2 = vec4(150, 4, 0.012, 0.5)
+clarity = 5
+see_through = 0.4
+caustics = 1
+caustic_size = 3
+ripple_cells = 0
+
+[node name="Floor" parent="." type="StaticBody3D"]
+position = vec3(0, -2.25, 0)
+
+[node name="Shape" parent="Floor" type="CollisionShape3D"]
+shape = BOX
+size = vec3(80, 0.5, 80)
+
+[node name="Mesh" parent="Floor" type="MeshInstance3D"]
+size = vec3(80, 0.5, 80)
+color = color(0.62, 0.54, 0.38, 1)
+receive_shadow = true
+
+[node name="Shin" parent="." type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(0, 0.3, 0)
+size = vec3(0.12, 1.6, 0.12)
+color = color(0.5, 0.5, 0.5, 1)
+roughness = 0.8
+cast_shadow = true
+
+[node name="Calf" parent="." type="MeshInstance3D"]
+primitive = CYLINDER
+position = vec3(-0.45, 0.3, 0.2)
+size = vec3(0.11, 1.6, 0.11)
+color = color(0.62, 0.42, 0.3, 1)
+roughness = 0.55
+cast_shadow = true
+
+[node name="Hull" parent="." type="MeshInstance3D"]
+position = vec3(1.5, 0.05, -1.6)
+size = vec3(1.1, 0.6, 2.8)
+color = color(0.9, 0.9, 0.88, 1)
+roughness = 0.3
+cast_shadow = true

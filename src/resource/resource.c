@@ -1386,6 +1386,7 @@ void cw_res_shutdown(void) {
   cw__gltf_shutdown();
   cw__skin_shading_shutdown();
   cw__rim_light_shutdown();
+  cw__waterline_shutdown();
   cw__foliage_shutdown();
   cw__surface_shutdown();
   cw_pool_free_all(&R.slots);

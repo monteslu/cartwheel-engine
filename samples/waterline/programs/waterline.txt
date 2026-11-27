@@ -1,0 +1,18 @@
+# r187 program states waterline draws (cmake/programs.cmake, tools/programs.mjs)
+depth+xplain_waterline
+depth+xwaterline
+depth+xplain
+standard+senv+l1000+xplain_waterline
+standard+senv+l1000+xwaterline
+standard+shadow+senv+l1000+xwaterline
+standard+senv+ds+l1000+xwaterlow
+standard+senv+l1000+xplain
+standard+shadow+senv+l1000+xplain
+standard+senv+l1000
+standard+shadow+senv+ds+l1000+xwater
+standard+shadow+senv+l1000
+# closure (tools/programs.mjs): 4 state(s), the surveyed materials in the environments surveyed for their class
+depth
+standard+senv+ds+l1000+xwater
+standard+shadow+senv+ds+l1000+xwaterlow
+standard+shadow+senv+l1000+xplain_waterline

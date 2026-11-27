@@ -91,6 +91,7 @@ export const LOCAL_ONLY = {
   'water-surface': 'romdev and Chromium legs',
   'water-open-sea-surface': 'romdev and Chromium legs',
   'water-see-through': 'romdev (GL and WebGPU frames of the water_see_through sample)',
+  'waterline': 'romdev (GL and WebGPU frames of the waterline sample)',
   'water-night': 'romdev legs (GL and WebGPU frames of the water_night and water_see_through carts)',
   'boom-perf': 'GPU timing reports (GL and WebGPU on the test GPU)',
   spikes: 'WebGPU timestamp queries on the test GPU',

@@ -92,7 +92,7 @@ void cw_shading_part_traits(const char *name, unsigned traits);
 unsigned cw_shading_part_traits_of(const char *name);
 /* The part names the engine owns (its modules' src/<module>/extensions/<part>.mjs): cluster, clusteries, csm, plain,
  * hfog, gi, gibuf, giproj, foliage, folalpha, rim, skinshade, meshdecal, velbuf, terrain, terrainlow, terrainmin,
- * terrainfx, terrainfxlow, terrainfxmin, terrainfar, water, waterlow. A game's cw_shading_part,
+ * terrainfx, terrainfxlow, terrainfxmin, terrainfar, water, waterlow, waterline. A game's cw_shading_part,
  * cw_shading_part_everywhere, cw_shading_part_traits or cw_shading_part_batching with one of them (or a surface,
  * cartwheel/surface.h, of that name) is refused with an error naming the part and its engine module: two parts of one
  * name share one program state and one hook, so the engine's or the game's shading silently replaced the other. Name
