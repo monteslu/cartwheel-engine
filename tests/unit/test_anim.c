@@ -157,6 +157,8 @@ static void on_event(cw_node e, const cw_value *a, int n, void *u) {
 static cw_tree *tree;
 static cw_node root, box, anim;
 
+extern bool cw__animtree_advance_ignores_divisor_test; /* src/anim/tree.c: the old advance (the control) */
+
 static void make_scene(void) {
   cw_scene_register_builtin_types();
   tree = cw_tree_new();
@@ -1049,6 +1051,33 @@ static void test_tree_text(void) {
     CHECK(writes == 6 || writes == 7); /* 24 ticks, every 4th, from wherever its slot starts */
     CHECK(box_x() > 0.33f && box_x() <= 0.4f + 1e-5f); /* 21 to 24 ticks of a 1 s ramp, by where its slot falls */
     FOLD(last);
+    /* cw_animtree_advance honours the divisor too (a game that steps its trees itself): every 4th call runs, with
+     * the time of all four; at divisor 1 every call writes. CONTROL (pass 2): the old advance, which ignored the
+     * divisor, writes on all 24 calls at divisor 4 (the bug) */
+    cw_node_set(dv, "active", cw_val_bool(false));
+    for (int pass = 0; pass < 3; pass++) {
+      cw__animtree_advance_ignores_divisor_test = pass == 2;
+      cw_node mv = cw_node_new("AnimationTree", pass == 1 ? "Div1" : pass ? "DivOld" : "Div4");
+      cw_node_add_child(root, mv);
+      cw_node_set(mv, "player", cw_val_string("../Anim"));
+      cw_node_set(mv, "process", cw_val_enum("MANUAL"));
+      CHECK(cw_animtree_load_text(mv, "clip name=\"a\" anim=\"ra\"\n"));
+      cw_animtree_set_update_divisor(mv, pass == 1 ? 1 : 4);
+      int runs = 0;
+      float at = box_x();
+      for (int i = 0; i < 24; i++) {
+        cw_animtree_advance(mv, 1.0 / 60);
+        if (box_x() != at) { runs++; at = box_x(); }
+      }
+      if (pass) CHECK_EQ_INT(runs, 24); /* pass 2: the control must show the bug */
+      else {
+        CHECK_EQ_INT(runs, 6); /* 24 calls, every 4th */
+        CHECK(box_x() > 0.33f && box_x() <= 0.4f + 1e-5f);
+      }
+      FOLD(at);
+      cw_node_set(mv, "active", cw_val_bool(false));
+    }
+    cw__animtree_advance_ignores_divisor_test = false;
   }
   free_scene();
 

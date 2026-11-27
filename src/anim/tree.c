@@ -875,9 +875,25 @@ void cw_animtree_on_event(cw_node n, cw_anim_event_fn fn, void *user) {
   if (t) t->hook = (anim_event_hook){ fn, user };
 }
 
+/* the update divisor (cw_animtree_set_update_divisor): true on the calls the graph runs, dt then all the time
+ * since the last run; trees are spread over the calls by their slot, as players are, so a crowd does not
+ * evaluate in step. The FIXED and UPDATE phases and cw_animtree_advance all go through it. */
+static bool due(cw_node n, atree *t, double *dt) {
+  if (t->divisor <= 1) return true;
+  t->pending += *dt;
+  if ((t->ticks++ + (uint32_t)(n.id & 0xffff)) % (uint32_t)t->divisor) return false;
+  *dt = t->pending;
+  t->pending = 0;
+  return true;
+}
+
+/* the test seam for tests/unit/test_anim.c's control: true brings back the old cw_animtree_advance, which ran the graph
+ * on every call whatever the divisor */
+bool cw__animtree_advance_ignores_divisor_test;
+
 void cw_animtree_advance(cw_node n, double dt) {
   atree *t = T(n, "cw_animtree_advance");
-  if (t) advance(n, t, dt);
+  if (t && (cw__animtree_advance_ignores_divisor_test || due(n, t, &dt))) advance(n, t, dt);
 }
 uint32_t cw_animtree_hash(cw_node n) { atree *t = T(n, NULL); return t ? t->mix->hash : 0; }
 t3_vec3 cw_animtree_root_motion(cw_node n) { atree *t = T(n, NULL); return t ? t->mix->rm_last : (t3_vec3){ 0, 0, 0 }; }
@@ -940,14 +956,7 @@ static void t_destroy(cw_node n, void *d) {
 static void t_fixed(cw_node n, void *d, double dt) {
   atree *t = d;
   if (t->process != CW_ANIM_PROCESS_FIXED) return;
-  if (t->divisor > 1) {
-    /* trees are spread over the ticks by their slot, as players are, so a crowd does not evaluate in step */
-    t->pending += dt;
-    if ((t->ticks++ + (uint32_t)(n.id & 0xffff)) % (uint32_t)t->divisor) return;
-    dt = t->pending;
-    t->pending = 0;
-  }
-  advance(n, t, dt);
+  if (due(n, t, &dt)) advance(n, t, dt);
 }
 
 void cw_animtree_set_update_divisor(cw_node n, int divisor) {
@@ -960,7 +969,7 @@ int cw_animtree_update_divisor(cw_node n) {
 }
 static void t_update(cw_node n, void *d, double dt) {
   atree *t = d;
-  if (t->process == CW_ANIM_PROCESS_UPDATE) advance(n, t, dt);
+  if (t->process == CW_ANIM_PROCESS_UPDATE && due(n, t, &dt)) advance(n, t, dt);
 }
 
 extern const char *const cw__anim_process_names[];

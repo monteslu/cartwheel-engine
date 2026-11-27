@@ -377,13 +377,15 @@ void cw_animtree_set_param(cw_node tree, const char *name, float value); /* crea
  * dropped when the graph is replaced. Sets the value too. */
 void cw_animtree_declare_param(cw_node tree, const char *name, float value);
 float cw_animtree_get_param(cw_node tree, const char *name); /* 0 when never set */
-/* Advance by dt now (any process mode). */
+/* Advance by dt now (any process mode). With an update divisor above 1 the graph runs on every divisor-th
+ * call only, with all the time since (below), as in the FIXED phase. */
 void cw_animtree_advance(cw_node tree, double dt);
-/* Animation level of detail for a tree far from the camera (as cw_anim_player_set_update_divisor): in the
- * FIXED phase the graph is evaluated, and the bones written, only on every divisor-th tick, with all the time
- * since. Clip times and event counts come out as at full rate; poses step, and a transition or a one-shot
- * starts up to divisor-1 ticks late. 1 (default) is every tick; at most 64. cw_anim_lod_divisor turns a
- * distance into a divisor. Deterministic. */
+/* Animation level of detail for a tree far from the camera (as cw_anim_player_set_update_divisor): the graph is
+ * evaluated, and the bones written, only on every divisor-th tick (FIXED phase), frame (UPDATE phase) or
+ * cw_animtree_advance call, with all the time since. Trees are staggered by their slot, so a crowd spreads
+ * its evaluations over the ticks. Clip times and event counts come out as at full rate; poses step, and a
+ * transition or a one-shot starts up to divisor-1 ticks late. 1 (default) is every tick; at most 64.
+ * cw_anim_lod_divisor turns a distance into a divisor. Deterministic. */
 void cw_animtree_set_update_divisor(cw_node tree, int divisor);
 int cw_animtree_update_divisor(cw_node tree); /* 1 when at full rate */
 uint32_t cw_animtree_hash(cw_node tree); /* running hash of every value the tree wrote */
