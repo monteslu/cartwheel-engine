@@ -29,7 +29,7 @@ export async function apply(ctx, next) {
   const { TSL, THREE, mat, props, sentinel, kind } = ctx;
   if (kind === 'depth' || !LIT.has(kind)) return next ? next(ctx) : undefined;
   const { uniform, texture, positionWorld, positionLocal, materialColor, materialRoughness, materialEmissive, float, vec2, vec3, vec4,
-    dot, max, min, mix, smoothstep, step, exp, sin, fwidth, fract, floor, length, clamp, normalWorld } = TSL;
+    dot, max, min, mix, smoothstep, step, exp, sin, fwidth, fract, floor, length, abs, clamp, normalWorld } = TSL;
   const v4 = (n) => {
     const s = [sentinel(), sentinel(), sentinel(), sentinel()];
     const u = uniform(new THREE.Vector4(...s)).setName(n);
@@ -96,7 +96,10 @@ export async function apply(ctx, next) {
     mat.roughnessNode = mix(rWet, float(0.05), drop);
   }
   // the meniscus: a band at least 1.5 px tall just over the line
-  const men = float(1).sub(smoothstep(float(0), max(look.z, px.mul(1.5)), h)).mul(step(float(0), h)).mul(look.w);
+  // (only where the surface stands up out of the water: on a deck or a floor nearly level with it the line would wander
+  // with every centimetre the fitted surface misses the drawn one)
+  const steep = float(1).sub(smoothstep(0.55, 0.8, abs(dot(normalWorld, plane.xyz))));
+  const men = float(1).sub(smoothstep(float(0), max(look.z, px.mul(1.5)), h)).mul(step(float(0), h)).mul(look.w).mul(steep);
   mat.emissiveNode = (mat.emissiveNode ?? materialEmissive).add(sky.xyz.mul(men.add(glint.mul(2.5))));
   return next ? next(ctx) : undefined;
 }
