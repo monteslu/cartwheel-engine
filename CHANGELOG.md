@@ -4,6 +4,24 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.85.0 (2026-11-27)
+
+### Added
+
+- **One GPU-idle wait after loading** (native WebGPU, `src/platform/gpu.c`): the first frame after the start's warm-up, and the first after each loading phase (`cw_loading_begin`), waits for the GPU once at its end, with a limit of 300 s, before the next frame begins. That frame is the first to draw the whole scene; a driver that compiles a shader when its program first draws (lavapipe, on its queue thread) could spend more than a frame's 10 s wait there on a cold shader cache, and the run then ended as a GPU failure a few frames later. The frames after it keep their overlap and their 10 s limit; carts never wait. Debug field `host.gpu.settle_waits` counts the waits. Gate `gpu-settle` (`samples/loading_phase` natively, the warm-up in one frame and spread over frames, a phase loaded in play) expects two; its control `CW_TEST_WGPU_NO_SETTLE=1` sees none and must fail.
+- Sample `anim_tree_cost`: what one AnimationTree evaluation costs on a game-sized character with no art (60 bones, 120 tracks a clip, a shooter's graph of synced 2D blend spaces, leans, an arms layer and eleven masked one-shots); `ATC_CROWD`, `ATC_DIVISOR`; debug fields `atc.tree_us`, `atc.tree_us_min`, `atc.param_us`.
+
+### Fixed
+
+- **`cw_animtree_advance` honours the update divisor** (`cartwheel/anim.h`): a tree stepped from the game's own code ran its graph on every call whatever `cw_animtree_set_update_divisor` said, so only the FIXED phase had the level of detail and a game advancing its crowd itself kept it by hand. Now every Nth call runs, with the time of all of them, staggered by slot as in the FIXED phase; the UPDATE phase does the same. `unit_anim`: 24 calls at divisor 4 run 6 times and land where full rate does; control: the old advance (a test seam) runs all 24.
+- **A TerrainScatter3D mesh swapped on a live layer is drawn** (`cartwheel/terrain.h`): setting `mesh` re-added the layer with the parts loaded for the first mesh, so the swap did nothing (curved grass blades set at run time stayed flat cards). The parts are released when the mesh changes; the new mesh is drawn in the same places. `unit_terrain` `scatter_mesh_swap` (two glTF blades made in the test, the swap applied the same tick and by the next fixed tick); control: the old cache (a test seam) still draws the first mesh.
+- `cw_input_set_actions` releases what a seat's devices hold too; a bot sharing a seat with a pad sets its own actions with `cw_input_set_action` (`cartwheel/input.h`, the input guide).
+
+### Docs
+
+- **Animation guide, cost of a tree**: measured on a game-sized character (`anim_tree_cost`, and a real game's soldiers of that shape on the same machine): 30 to 40 us an evaluation natively on a Ryzen 7 8745HS, 58 to 86 us as a release cart, against the 9 us of the 22-bone two-clip lifter; the cost follows bone tracks times clips with weight, and a MANUAL tree stepped from `fixed_update` makes its model's IK modifiers solve twice a tick. The divisor section says it now applies to `cw_animtree_advance`.
+- The terrain guide and the `mesh` property say a mesh set on a live layer swaps at once; the app-platform guide describes the settle wait after loading.
+
 ## v0.84.1 (2026-11-26)
 
 ### Fixed
