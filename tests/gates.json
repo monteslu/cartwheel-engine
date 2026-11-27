@@ -5805,6 +5805,11 @@
     "note": "the warm-up builds the programs of what the camera cannot see yet, on GL and WebGPU, spread as a player gets it; control: a mesh with a new program appears in play and its program arrives then"
   },
   {
+    "name": "gpu-settle",
+    "script": "tests/gpu-settle.mjs",
+    "note": "native WebGPU waits for the GPU once (limit 300 s) at the end of the first frame after the start's warm-up and after a loading phase in play, so a driver that compiles shaders at first draw never trips a frame's 10 s wait after it (samples/loading_phase, the warm-up in one frame and spread): two settle waits, the phase finished; control: CW_TEST_WGPU_NO_SETTLE=1 leaves them out"
+  },
+  {
     "name": "water-pause",
     "script": "tests/water-pause.mjs",
     "note": "a paused scene's water and bodies are the same picture frame after frame at a render rate that is not the tick rate, and pausing or resuming moves no more of the picture than a step of play, on GL and WebGPU; control: no pause must differ, and waves moved on half a second at the pause must break the bound"

@@ -36,6 +36,8 @@
 #include "cartwheel/debug.h"
 #include "cartwheel/gl.h"
 #include "cartwheel/jobs.h"
+#include "cartwheel/platform.h"
+#include "cartwheel/profile.h"
 
 static cw_gpu_api backend = CW_GPU_GL;
 static bool auto_pick __attribute__((unused)); /* the native run chose WebGPU itself (CW_GPU_AUTO): GL is its fallback */
@@ -44,6 +46,7 @@ static uint32_t gpu_errors;
 static uint32_t dbg_api; /* debug field: 1 GL, 2 WebGPU */
 static uint32_t dbg_core; /* debug field host.gpu.core: 1 core WebGPU device */
 static uint32_t host_threads, host_worker_chunks;
+static uint32_t host_settle_waits; /* debug field host.gpu.settle_waits: the GPU-idle waits after loading (native WebGPU) */
 
 cw_gpu_api cw_gpu_backend(void) { return backend; }
 /* decided once, on the first ask (from the app's init on, when the backend is known) */
@@ -72,6 +75,7 @@ void cw__gpu_debug_register(void) {
   cw_debug_u32("host.gpu.adapter_type", &adapter_info.adapter_type);
   cw_debug_u32("host.gpu.backend", &adapter_info.backend);
   cw_debug_u32("host.gpu.core", &dbg_core);
+  cw_debug_u32("host.gpu.settle_waits", &host_settle_waits);
   cw_debug_u32("host.jobs.threads", &host_threads);
   cw_debug_u32("host.jobs.worker_chunks", &host_worker_chunks);
 }
@@ -545,12 +549,18 @@ static void on_work_done(WGPUQueueWorkDoneStatus st, WGPUStringView msg, void *u
   (void)st, (void)msg, (void)u1, (void)u2;
 }
 
-static void wait_future(WGPUFuture f) {
+/* A frame's wait gives up after 10 s (a lost or hung device). The settle wait after loading (cw__wgpu_frame_end)
+ * allows WAIT_SETTLE_S: drivers that compile shaders when a program first draws (Mesa's lavapipe, on its queue
+ * thread) can take longer than a frame's limit over the first full frame on a cold shader cache. */
+#define WAIT_FRAME_S 10ull
+#define WAIT_SETTLE_S 300ull
+static void wait_future_for(WGPUFuture f, uint64_t seconds, const char *what) {
   WGPUFutureWaitInfo wi = { .future = f };
-  WGPUWaitStatus ws = wgpuInstanceWaitAny(G.instance, 1, &wi, 10ull * 1000 * 1000 * 1000);
-  if (ws != WGPUWaitStatus_Success) cw__wgpu_fail("waiting for the GPU failed (status %d)", (int)ws);
+  WGPUWaitStatus ws = wgpuInstanceWaitAny(G.instance, 1, &wi, seconds * 1000 * 1000 * 1000);
+  if (ws != WGPUWaitStatus_Success) cw__wgpu_fail("waiting for the GPU failed (%s, status %d after up to %llu s)", what, (int)ws, (unsigned long long)seconds);
   wgpuInstanceProcessEvents(G.instance); /* and deliver what else completed */
 }
+static void wait_future(WGPUFuture f) { wait_future_for(f, WAIT_FRAME_S, "a frame"); }
 
 static bool test_run(void) { return getenv("CW_FRAMES") != NULL; }
 
@@ -772,6 +782,20 @@ void cw__wgpu_frame_end(bool present) {
   fut[slot] = wgpuQueueOnSubmittedWorkDone(G.queue, (WGPUQueueWorkDoneCallbackInfo){
     .mode = WGPUCallbackMode_WaitAnyOnly, .callback = on_work_done, .userdata1 = (void *)&pending[slot] });
   pending[slot] = true;
+  /* the first frame after loading (the start, its warm-up, or a cw_loading_begin phase) is the first that draws the
+   * whole scene: the GPU is waited for once, with WAIT_SETTLE_S, so the frames in flight after it never count a
+   * driver's shader compiling against a frame's 10 s. CW_TEST_WGPU_NO_SETTLE=1 leaves it out (the gate's control) */
+  static bool was_loading = true;
+  static int no_settle = -1;
+  if (no_settle < 0) no_settle = getenv("CW_TEST_WGPU_NO_SETTLE") && *getenv("CW_TEST_WGPU_NO_SETTLE") == '1';
+  bool loading = cw_loading_active();
+  if (was_loading && !loading && !no_settle) {
+    CW_PROFILE_SCOPE("gpu.settle");
+    wait_future_for(fut[slot], WAIT_SETTLE_S, "the first frame after loading");
+    for (int i = 0; i < 3; i++) pending[i] = false; /* everything submitted before it is done too */
+    host_settle_waits++;
+  }
+  was_loading = loading;
   slot = (slot + 1) % 3;
   if (pending[slot]) wait_future(fut[slot]);
   pending[slot] = false;

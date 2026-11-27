@@ -227,6 +227,7 @@
   "post-ssao": 9,
   "quality-scope-resolution": 9,
   "warm-culled": 9,
+  "gpu-settle": 12,
   "csg-greybox": 8,
   "fog-transparents-nofog": 8,
   "lighting-changes": 8,
