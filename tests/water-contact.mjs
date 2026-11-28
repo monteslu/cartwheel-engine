@@ -78,7 +78,9 @@ const lum3 = (im, x, y) => (lum(im, x - 1, y) + lum(im, x, y) + lum(im, x + 1, y
 const median = (a) => { const s = [...a].sort((p, q) => p - q); return s[s.length >> 1]; };
 
 // the object's two edges on a row: the strongest luminance step (either way) on each side of the middle, sub-pixel by a parabola
-function edges(im, y, cx, half) {
+// (around: the dry edges' columns, to look within a third of a half width of each: the collar's ring of bubbles beside
+// the shin under the line has a stronger step at its own outer edge than the shin's against the water)
+function edges(im, y, cx, half, around) {
   const g = (x) => Math.abs(lum(im, x + 1, y) - lum(im, x - 1, y));
   const find = (a, b) => {
     let best = a, bv = -1;
@@ -86,6 +88,7 @@ function edges(im, y, cx, half) {
     const l = g(best - 1), c = bv, r = g(best + 1), den = l - 2 * c + r;
     return { x: best + (den < 0 ? (0.5 * (l - r)) / den : 0), v: bv };
   };
+  if (around) { const w = half / 3; return [find(Math.round(around[0] - w), Math.round(around[0] + w)), find(Math.round(around[1] - w), Math.round(around[1] + w))]; }
   return [find(Math.round(cx - half * 1.8), Math.round(cx - half * 0.4)), find(Math.round(cx + half * 0.4), Math.round(cx + half * 1.8))];
 }
 
@@ -122,7 +125,7 @@ function measure(wet, dry, view, shinWidth) {
   const i90 = C.findIndex((v) => v <= 0.9 * c0), i10 = C.findIndex((v) => v <= 0.1 * c0);
   const p2 = i90 >= 0 && i10 >= 0 ? (i10 - i90) / cm : i90 >= 0 ? Infinity : NaN;
   // the middle from the two edges: 3 to 5 cm over the line against 3 to 5 cm under it (the mean over the rows)
-  const mids = (y0, y1) => { const m = []; for (let y = y0; y <= y1; y++) { const [l, r] = edges(wet, y, cx, (shinWidth * g.pxm) / 2); m.push((l.x + r.x) / 2); } return m.reduce((p, q) => p + q, 0) / m.length; };
+  const mids = (y0, y1) => { const m = []; for (let y = y0; y <= y1; y++) { const [l, r] = edges(wet, y, cx, (shinWidth * g.pxm) / 2, [el.x, er.x]); m.push((l.x + r.x) / 2); } return m.reduce((p, q) => p + q, 0) / m.length; };
   const up = mids(Math.round(MID - 5 * cm), Math.round(MID - 3 * cm)), dn = mids(Math.round(MID + 3 * cm), Math.round(MID + 5 * cm));
   const p3 = Math.abs(dn - up) / g.pxcmH;
   return { found, widthM, p1, p2, p3, c0 };
@@ -163,8 +166,13 @@ for (const gpu of GPUS) {
     console.log(`${tag} ${phase} with every foam layer: P1 ${f2(m.p1)}, P3 ${f2(m.p3)} cm, foam over the contact ${pct(cov)}`);
     ok(m.found && P1OK(m) && P3OK(m) && cov <= 0.1, `${tag} ${phase} with every foam layer: P1 ${f2(m.p1)} in 0.75..1.1, P3 ${f2(m.p3)} cm < 0.5, foam over the contact ${pct(cov)} <= 10 %`);
   }
+  // (clear water's fade with the planar reflection off: since v0.89 the shin's own reflection meets it at the line and
+  // lies down its column, a few per cent of grey against the sky beside it, which crosses the faint tail of clear
+  // water's long fade; the fade is the light through the water, and tests/water-contact-surface.mjs holds the
+  // reflection. The murky harbour's short fade is read as it shows)
+  const NOREFL = ['set Root/Water reflection false'];
   for (const water of ['harbour', 'atoll']) {
-    const m = measure(shot(gpu, `trough-${water}`, { phase: 'trough', water }), dry.trough, 'steep', 0.12);
+    const m = measure(shot(gpu, `trough-${water}`, { phase: 'trough', water, cmds: water === 'atoll' ? NOREFL : [] }), dry.trough, 'steep', 0.12);
     console.log(`${tag} trough ${water}: P1 ${f2(m.p1)}, P2 ${f1(m.p2)} cm`);
     ok(m.found && P1OK(m) && P2OK(m, water), `${tag} trough ${water}: P1 ${f2(m.p1)}, P2 ${f1(m.p2)} cm in ${WATERS[water].range.join('..')} cm`);
   }

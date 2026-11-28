@@ -12,7 +12,15 @@
  *   CW_TEST_WC_FOAM   1: every foam and lace layer on, as a racing game's sea has them (crest foam 1, lace 0.3, soft
  *                     foam, the foam pattern 7), and a slow wake at the shin each tick (0.5 m/s): foam must not
  *                     hide the contact
- * Debug state: wc.tick, wc.h (the surface at the shin's near side, over the rest level, m), wc.hh (at the hull's near side). */
+ *   CW_TEST_WC_TILT   degrees the shin leans sideways in the picture (about the view's axis, its contact where it
+ *                     was): a slanted outline, along which a coarse refraction target steps (tests/water-contact-edge.mjs)
+ * Each tick the shin and the hull stamp their collars (cw_water_collar: the ring of piled-up water and bubbles where
+ * each stands through the surface; the hull's as three rings along it).
+ *   CW_TEST_WATER_COLLAR 0: no collars (the gates' control)
+ *   CW_TEST_WC_DECK   1: in the shin's place a dark craft's deck (Root/Deck, 1.1 x 2.8 m, 0.6 deep) 0.2 m under the
+ *                     drawn surface, the craft seen end on as from behind (narrower than the ring the water finds the
+ *                     ground by), the shin hidden: with every foam layer the wake floats over the deck, no dark slab
+ * Debug state: wc.collar, wc.collar_foam (the collar layer's cells and its most bubbles), wc.tick, wc.h (the surface at the shin's near side, over the rest level, m), wc.hh (at the hull's near side). */
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,9 +30,10 @@
 #include "cartwheel/water.h"
 
 #define T_SHOT 90
-static uint32_t tick;
+static uint32_t tick, fine_cells;
+static float fine_foam;
 static float h_shin, h_hull;
-static int view, foam;
+static int view, foam, collar = 1, deck;
 
 static cw_node node(const char *path) { return cw_node_get(cw_tree_root(cw_scene_app_tree()), path); }
 
@@ -50,6 +59,8 @@ static void init(void *u) {
   cw_debug_u32("wc.tick", &tick);
   cw_debug_f32("wc.h", &h_shin);
   cw_debug_f32("wc.hh", &h_hull);
+  cw_debug_u32("wc.collar", &fine_cells);
+  cw_debug_f32("wc.collar_foam", &fine_foam);
 }
 
 /* the switches, read on tick 2 (on a cart a test's environment arrives with frame 1, after init) */
@@ -67,10 +78,22 @@ static void switches(void) {
     cw_node_set(w, "foam_soft", cw_val_float(1));
     cw_node_set(w, "foam_scale", cw_val_float(7));
   }
+  const char *tilt = cw_test_env("CW_TEST_WC_TILT");
+  if (tilt && *tilt) cw_node_set(node("Root/Shin"), "rotation", cw_val_vec3(0, 0, (float)atof(tilt) * 3.14159265f / 180.0f));
+  const char *dk = cw_test_env("CW_TEST_WC_DECK");
+  deck = dk && atoi(dk) > 0;
+  if (deck) {
+    cw_node_set(node("Root/Deck"), "visible", cw_val_bool(true));
+    cw_node_set(node("Root/Shin"), "visible", cw_val_bool(false));
+  }
+  const char *co = cw_test_env("CW_TEST_WATER_COLLAR");
+  if (co && *co && atoi(co) == 0) collar = 0;
   const char *none = cw_test_env("CW_TEST_WC_NONE");
   if (none && atoi(none) > 0) {
     cw_node_set(node("Root/Shin"), "visible", cw_val_bool(false));
     cw_node_set(node("Root/Hull"), "visible", cw_val_bool(false));
+    cw_node_set(node("Root/Deck"), "visible", cw_val_bool(false));
+    collar = 0;
   }
 }
 
@@ -79,7 +102,14 @@ static void update(void *u, double dt) {
   (void)dt;
   tick++;
   if (tick == 2) switches();
-  if (foam) cw_water_wake(node("Root/Water"), 0, 0, 0.5f, 0, 0.3f, 0.02f, 0.6f);
+  if (foam) cw_water_wake(node("Root/Water"), 0, 0, 0.5f, 0, deck ? 1.2f : 0.3f, 0.02f, 0.6f);
+  /* #region collar */
+  if (collar && tick >= 2) {
+    cw_node w = node("Root/Water");
+    if (!deck) cw_water_collar(w, 0, 0, 0.06f, 0, 0, 0.8f); /* (a sunk deck pierces nothing) */
+    for (int k = -1; k <= 1; k++) cw_water_collar(w, -4 + 0.85f * (float)k, 0, 0.55f, 0, 0, 0.8f);
+  }
+  /* #endregion */
 }
 
 /* (in render, at the drawn surface's own time: the tick before plus alpha, as the water draws it) */
@@ -89,8 +119,14 @@ static void render(void *u, double alpha) {
   double t = cw_water_time(w) + (alpha - 1.0) * cw_fixed_dt();
   h_shin = cw_water_height_at(w, 0, 0.06f, t); /* (on the near side, where the camera looks) */
   h_hull = cw_water_height_at(w, -4, 0.55f, t);
+  {
+    cw_water_stats st;
+    cw_water_get_stats(cw_scene_app_tree(), &st);
+    fine_cells = (uint32_t)st.collar_cells, fine_foam = st.collar_foam;
+  }
   cw_node_set(node("Root/Shin"), "position", cw_val_vec3(0, h_shin, 0));
   cw_node_set(node("Root/Hull"), "position", cw_val_vec3(-4, h_hull + 0.05f, 0));
+  if (deck) cw_node_set(node("Root/Deck"), "position", cw_val_vec3(0, h_shin - 0.5f, 0));
   static const float cam[3][3] = { { 0, 2.2f, 3 }, { 0, 0.6f, 4 }, { -4, 1.5f, 4.5f } };
   const float *c = cam[view];
   float hy = view == 2 ? h_hull : h_shin;

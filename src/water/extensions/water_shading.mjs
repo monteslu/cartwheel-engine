@@ -63,7 +63,9 @@ export async function applyWater({ TSL, THREE, mat, props, sentinel }, low) {
   const grid = v4('waterGrid');     // x, y: the grid's centre (water-local; the camera's foot on a VIEW grid); z: VIEW grid on; w: the foam pattern's scale
   const shelter = v4('waterShelter'); // per wave: how much the wave mask holds it down
   const crestLight = v4('waterCrest'); // x: how much lighter crests are (0: as before); y: see_through (m, 0: off); z: the light reaching the water (0..1); w: 2 x tan(half the view's height angle)
-  const contact = low ? null : v4('waterContact'); // x: the water over a point at which the refraction's offset is whole (m; 0: the offset whatever the depth); y: the leak bound (m; 0: no leak check); z: what is seen through the water fades along its two-way path (1) or by the vertical depth alone (0); w: unused
+  const contact = low ? null : v4('waterContact'); // x: the water over a point at which the refraction's offset is whole (m; 0: the offset whatever the depth); y: the leak bound (m; 0: no leak check); z: what is seen through the water fades along its two-way path (1) or by the vertical depth alone (0); w: foam stands back over objects as v0.87 had it (1: over their whole depth to 35 cm, the gates' control) or as now (0)
+  const edge = low ? null : v4('waterEdge'); // x: the reflection read moved by the local height over y (1; 0: not moved, -1: the wrong way, a control); y: the height over the rest level the reflection target is mirrored about (m); z: the collar's glow (collar_glow); w: unused
+  const fine = low ? null : v4('waterFine'); // x, y: the collar layer's centre (world x, z: read where the drawn surface is); z: its size (m); w: 1 / its cells (0: none)
   const cam = v4('waterCam');       // xyz: the camera's world position (three.c fills no cameraPosition); w: 1 when the view is drawn rows bottom-up (cartwheel's WebGPU scene target) but the planar targets top-down
 
   const m4 = (n) => {
@@ -95,6 +97,7 @@ export async function applyWater({ TSL, THREE, mat, props, sentinel }, low) {
   const refractMap = low ? null : tex('waterRefraction', true, false, true);
   const floorMap = tex('waterFloorMap', true, false, true);
   const rippleMap = tex('waterRippleMap', true, false, true);
+  const fineMap = low ? null : tex('waterFineMap', true, false, true);
   const causticMap = low ? null : tex('waterCaustic', true, true, false);
   const waveMask = tex('waterWaveMask', true, false, true);
   // the refraction's window depth, read texel by texel: a float texture (compatibility-mode WebGPU reads a depth
@@ -165,7 +168,8 @@ export async function applyWater({ TSL, THREE, mat, props, sentinel }, low) {
   let rslope = vec2(0, 0);
   const uvR = vRest.sub(ripR.xy).div(rip.yz).add(0.5);
   const inR = float(1).sub(step(0.5, max(abs(uvR.x.sub(0.5)), abs(uvR.y.sub(0.5))))).mul(step(0.001, rip.x));
-  const rfoam = texture(rippleMap, uvR).g.mul(inR);
+  let rfoam = texture(rippleMap, uvR).g.mul(inR);
+  let fineFoam = float(0);
   if (!low) {
     const hL = texture(rippleMap, uvR.sub(vec2(ripR.z, 0))).r;
     const hR = texture(rippleMap, uvR.add(vec2(ripR.z, 0))).r;
@@ -173,6 +177,15 @@ export async function applyWater({ TSL, THREE, mat, props, sentinel }, low) {
     const hU = texture(rippleMap, uvR.add(vec2(0, ripR.w))).r;
     const rcell = rip.yz.mul(vec2(ripR.z, ripR.w));
     rslope = vec2(hR.sub(hL).div(rcell.x.mul(2)), hU.sub(hD).div(rcell.y.mul(2))).mul(rip.x).mul(inR).mul(2);
+    // the collars' bubbles (cw_water_collar) on the collar layer near the player: one read, only inside its square
+    // (explicit level: a branch), faded over its last 8 %
+    const uvFi = positionWorld.xz.sub(fine.xy).div(fine.z).add(0.5);
+    const inF = float(1).sub(smoothstep(0.42, 0.5, max(abs(uvFi.x.sub(0.5)), abs(uvFi.y.sub(0.5))))).mul(step(1e-6, fine.w));
+    fineFoam = Fn(() => {
+      const o = float(0).toVar();
+      If(inF.greaterThan(0.001), () => { o.assign(texture(fineMap, uvFi).level(0).r.mul(inF)); });
+      return o;
+    })();
   }
   const n = normalize(vec3(wn.x.add(d.x.mul(detailWeight)).add(df.x.mul(fineWeight)).sub(rslope.x), wn.y,
     wn.z.add(d.z.mul(detailWeight)).add(df.y.mul(fineWeight)).sub(rslope.y)));
@@ -246,7 +259,14 @@ export async function applyWater({ TSL, THREE, mat, props, sentinel }, low) {
   const vuv = screenUV.sub(viewRect.xy).div(viewRect.zw);
   const suv = vec2(vuv.x, mix(vuv.y, float(1).sub(vuv.y), cam.w));
   // (the reflection is moved by the ripples only: the swell bending it reaches the ground under the mirrored horizon)
-  const refl = texture(reflectMap, vec2(float(1).sub(suv.x), suv.y).add(n.xz.sub(wn.xz).mul(look.y)).add(wn.xz.mul(floorRect.w))).rgb.mul(tint.w);
+  // (the reflection target is mirrored about the height edge.y; the surface here mirrors about its own height vSurf, so
+  // the mirrored world stands 2 (vSurf - edge.y) higher: read the target that much lower on the screen, a world height
+  // taken to the screen by the view's depth here and how far world up leans into the picture's up. An object's
+  // reflection then meets it at the line on a crest or in a trough instead of hanging under it or over it)
+  const surfV = cameraViewMatrix.mul(vec4(positionWorld, 1)).xyz;
+  const upV = cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz;
+  const reflDv = vSurf.sub(edge.y).mul(2).mul(upV.y).div(max(surfV.z.negate(), 0.1).mul(max(crestLight.w, 0.01))).mul(edge.x);
+  const refl = texture(reflectMap, vec2(float(1).sub(suv.x), suv.y.add(reflDv)).add(n.xz.sub(wn.xz).mul(look.y)).add(wn.xz.mul(floorRect.w))).rgb.mul(tint.w);
   // the refraction's own depth: the water between the surface and whatever is under it, along the view ray, then
   // taken to a vertical depth. The clip depth (d or 2d - 1) and the row direction are what the host's targets use.
   // texel rows top row first on both backends (three.c's GL targets and the WebGPU copy alike)
@@ -359,7 +379,9 @@ export async function applyWater({ TSL, THREE, mat, props, sentinel }, low) {
   // under, less in clearer water, by see_through / 0.4, to a quarter)
   const rM = mix(float(0.04), float(0), contact.z).add(zr.mul(0.12).mul(mix(float(1), clamp(float(0.4).div(seeT), 0.25, 1), contact.z)));
   const rUvY = rM.div(surfDist.mul(max(crestLight.w, 0.01)));
-  const rUv = vec2(rUvY.div(aspect), rUvY);
+  // (at least a texel of the refraction: the object's mask then fades over two texels at its outline instead of stepping
+  // with them, which a wake's foam standing back over it would show as a hard, striped edge)
+  const rUv = max(vec2(rUvY.div(aspect), rUvY), vec2(1).div(refrSize.xy));
   const seeObj = Fn(() => {
     const o = vec4(0).toVar();
     If(isObj, () => {
@@ -442,7 +464,10 @@ export async function applyWater({ TSL, THREE, mat, props, sentinel }, low) {
   const seenFloor = texC.mul(tint.rgb).mul(trans).mul(caus).add(body.mul(inscatter));
   const seen = seenFloor.mul(float(1).sub(objV)).add(objCol);
   // crest_light: light comes through the thin top of a wave whatever lies under it, so it is mixed in after the refraction
-  const refr = mix(mix(body, seen, deep.w), shallow.rgb.mul(lit).mul(1.5), crestTop.mul(0.75).mul(float(1).sub(objV.mul(contact.z))));
+  // (a collar's piled-up bubbly water is thin and lit through as a crest's top is: it glows by its bubbles)
+  const collarGlow = smoothstep(0.1, 0.6, fineFoam).mul(edge.z).mul(0.3)
+    .mul(float(1).sub(max(objB, objV).mul(exp(max(tapC.z.sub(0.1), 0).div(0.06).negate())).mul(contact.z)));
+  const refr = mix(mix(body, seen, deep.w), shallow.rgb.mul(lit).mul(1.5), max(crestTop.mul(0.75), collarGlow).mul(float(1).sub(objV.mul(contact.z))));
   // light through the crests toward the eye: the turquoise glow of a wave against the sun
   const toSun = normalize(sun.xyz);
   const fwd = pow(max(dot(toSun, toEye.negate()), 0), 3);
@@ -484,11 +509,17 @@ export async function applyWater({ TSL, THREE, mat, props, sentinel }, low) {
   const thick = max(max(shoreFoam.mul(mix(0.55, 1, lumpy)), lines.mul(noise2)), max(max(crestFoam, crestTopFoam), rfoam.mul(1.25)));
   const cover = smoothstep(0.04, 0.62, thick.add(patchy.sub(0.5).mul(0.55).mul(float(1).sub(smoothstep(0.5, 1, thick)))));
   const foam2 = cover.mul(mix(softLace.mul(0.75).add(0.25), float(1), smoothstep(0.42, 0.95, thick))).mul(mix(0.8, 1, noise));
-  // (foam stands back over an object under the surface: none over its first 10 cm, so at the line a leg or a hull is
-  // seen through clear water, never painted over by the crest's foam and lace or a wake's; it comes back by 35 cm, and
-  // in between as the object fades. The white water of a hull at speed is the game's spray, drawn over the water)
-  const foamBack = objB.mul(float(1).sub(smoothstep(0.1, 0.35, tapC.z))).mul(contact.z);
-  const foam = mix(foam1, clamp(foam2, 0, 1), refrSize.w).mul(float(1).sub(max(foamBack, objV.mul(contact.z))));
+  // (foam stands back over an object where it meets the surface: none over its first 10 cm, so at the line a leg or a
+  // hull is seen through clear water, never painted over by the crest's foam and lace or a wake's, and it comes back
+  // with the depth from there, by half within 4 cm more and nearly all by 27 cm, with no edge. Deeper, foam floats over what lies under it as it does over open water: a stern or
+  // a deck a few tens of centimetres down lies under the wake's foam, not under a dark slab cut out of it with the
+  // object's outline. The mask is the object's own (objB) and its blurred visibility (objV).
+  // The white water of a hull at speed is the game's spray, drawn over the water)
+  const foamBack = mix(max(objB, objV).mul(exp(max(tapC.z.sub(0.1), 0).div(0.06).negate())),
+    max(objB.mul(float(1).sub(smoothstep(0.1, 0.35, tapC.z))), objV), contact.w).mul(contact.z); // (contact.w 1: v0.87's, the control)
+  // (a collar's bubbles are dense where they are: not cut into lace as thin crest foam is)
+  const collarFoam = smoothstep(0.1, 0.6, fineFoam).mul(mix(0.6, 1, noise2));
+  const foam = max(mix(foam1, clamp(foam2, 0, 1), refrSize.w), collarFoam).mul(float(1).sub(foamBack));
   // (the glow comes from the water between the surface and what lies behind it: in front of an object near the line
   // there is almost none)
   const emitAbove = mix(refr, refl, fres).add(sss.mul(float(1).sub(fres)).mul(float(1).sub(objV.mul(contact.z)))).add(gl);

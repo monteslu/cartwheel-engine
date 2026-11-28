@@ -47,7 +47,8 @@
  *                          point (Water2's flowMap, 0.5 = still), over the
  *                          whole rectangle
  *     reflection, refraction   draw them (quality may turn them down or off)
- *     resolution_scale     of the reflection and refraction targets (0.5)
+ *     resolution_scale     of the reflection target (0.5), and the refraction's
+ *                          where that is larger than refraction_scale's
  *     debug_view           NONE, or HEIGHT: the surface's height as colour
  *                          (tests read it back: R, G = height's 16 bits
  *                          over debug_range, B = 1)
@@ -93,6 +94,13 @@
  *     ripple_cells, ripple_size, ripple_center, ripple_speed, ripple_damping,
  *     ripple_strength, foam_fade, rain, rain_size, rain_strength, splash_fx,
  *     splash_fx_min        the interactive ripple layer (see cw_water_splash)
+ *     collar_cells, collar_size   the collar layer near the player (256
+ *                          cells over 10 m: 4 cm; 0 = none; off at effects
+ *                          Low): cw_water_collar's rings of bubbles
+ *     collar_glow          the light through a collar's piled-up water (1)
+ *     refraction_scale     the refraction target's share of the view at High
+ *                          (0.5; Ultra 2 x, at most full size: the whole view;
+ *                          never under the reflection's resolution_scale share)
  *
  *   Buoyancy3D   (Node3D) child of a RigidBody3D: pushes it up where its
  *                probes are under the water and drags it where they are
@@ -124,9 +132,10 @@
  * sag of cw_water_height_at (a few millimetres at the default grid).
  *
  * Drawing renders the scene twice more before the main pass, as r187's
- * Reflector and Refractor do: mirrored about the rest level (an oblique
- * near plane clips what is below it) and clipped to below it, each at
- * resolution_scale, with the water hidden (Low draws neither: the
+ * Reflector and Refractor do: mirrored about the drawn surface where the view
+ * looks (an oblique near plane clips what is below it; each pixel reads it
+ * moved by its own height over that) at resolution_scale, and clipped to below
+ * the waves' highest at refraction_scale, with the water hidden (Low draws neither: the
  * environment's specular stands in for the reflection, deep_color for the
  * refraction; Medium draws the reflection only). Costs: the water guide;
  * on the 890M the water_boat frame is 1.0 ms (Low) to 2.1 ms (Ultra) of GPU
@@ -254,12 +263,30 @@ void cw_water_splash(cw_node water, float x, float z, float radius, float depth,
 /* A body moving through the water at (vx, vz): call once per fixed tick; it
  * leaves a trough and foam along its path. */
 void cw_water_wake(cw_node water, float x, float z, float vx, float vz, float radius, float depth, float foam);
+/* Where something stands through the surface at world (x, z) (a leg, a hull,
+ * a post; radius its half width at the line, metres), moving at (vx, vz) m/s:
+ * call once per fixed tick while it does. Writes into the collar layer the collar
+ * real water makes there: a thin ring of bubbles hugging its side (about 7 cm
+ * round a leg, 13 to 20 cm round a hull, wider with speed), faint round a still
+ * object (a meniscus), thick round a moving one and thickest ahead of it. foam
+ * (0..1) is the bubbles' amount. A moving body's bow wave and trough are its
+ * wake's (cw_water_wake). The ring is drawn on the water beside the
+ * object only: over what shows through the surface in front of it the foam
+ * stands back, so the line stays the water's own transparency. No-op without
+ * the collar layer. */
+void cw_water_collar(cw_node water, float x, float z, float radius, float vx, float vz, float foam);
 /* Keep the ripple grid around world (x, z): the grid and what is on it move by
  * whole cells so the ripples stay where they are in the world, and cells
- * coming in are flat. Call it from fixed_update with simulation values, so the
+ * coming in are flat (the collar layer follows the same point by its own
+ * cells, until cw_water_collar_follow places it). Call it from fixed_update with simulation values, so the
  * field stays the same bits on every host. This is how a small, sharp grid
  * covers a course much larger than itself. */
 void cw_water_ripple_follow(cw_node water, float x, float z);
+/* Keep the collar layer around world (x, z) instead (a grid that follows a
+ * point ahead of a fast craft leaves the craft itself near the collar layer's
+ * edge): call it each fixed tick with the player's own position. Once called,
+ * cw_water_ripple_follow moves the grid only. */
+void cw_water_collar_follow(cw_node water, float x, float z);
 /* The ripple height in metres over world (x, z) (0 outside the grid). */
 float cw_water_ripple_at(cw_node water, float x, float z);
 /* A hash of the ripple field (heights and foam): the cross-host test. 0 without a grid. */
@@ -277,6 +304,9 @@ typedef struct cw_water_stats {
   int sun_light;          /* 1 when the last surface drawn was lit by a scene light (Water3D sun, else the first DirectionalLight3D): no ProceduralSky */
   int hidden;             /* Water3D nodes hidden by themselves or an ancestor: no surface, reflection, refraction, underwater pass or ripples */
   int flat_normal;        /* Water3D nodes drawn with a flat normal map: their normal_map is still loading or did not load (logged once) */
+  int collar_cells;       /* the last surface drawn's collar layer: cells across (0: none) */
+  int collar_awake;       /* 1 when that layer holds bubbles (something wrote into it and they have not faded) */
+  float collar_foam;      /* the most bubbles on that layer (0..1, cw_water_collar) */
 } cw_water_stats;
 /* Zeroed when t is NULL or has no water. */
 void cw_water_get_stats(cw_tree *t, cw_water_stats *out);

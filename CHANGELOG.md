@@ -4,6 +4,24 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.89.0 (2026-11-27)
+
+### Added
+
+- **Collars where things stand in the water** (`cartwheel/water.h`, the water guide, "Collars where things stand in the water"): `cw_water_collar` writes the ring of bubbles real water makes round a leg, a hull or a post where it stands through the surface (about 7 cm round a leg, 13 to 20 cm round a hull, wider with speed; faint round a still object, a meniscus, thick round a moving one and thickest ahead), once a fixed tick while it does. It goes into a layer of its own near the player, the collar layer (`collar_cells` 256 over `collar_size` 10 m: 4 cm cells; off at effects Low), kept round the ripple grid's follow point or `cw_water_collar_follow`'s. The ring is drawn on the water beside the object only: over what shows through the surface in front of it the foam stands back, so the line stays the water's own transparency. Its piled-up water is lit through as a crest's top is (`collar_glow`). Read where the drawn, displaced surface is, so a collar sits where the object pierces a steep crest.
+- `refraction_scale` (Water3D): the refraction target's share of the view at High (0.5), twice that at Ultra (at most the whole view), never under the reflection's `resolution_scale` share.
+- `cw_water_stats.collar_cells`, `collar_awake`, `collar_foam`.
+- Gates `water-contact-edge` (the submerged outline of a slanted shin against its dry outline, row by row at native resolution; control: Ultra's refraction as before) and `water-contact-surface` (P8: an object's reflection meets its base at the line on a swell; P4: the collar brightens the water beside a shin and not the shin; controls: the reflection about the rest level, moved the wrong way, the collar layer not drawn). Sample `water_contact`: `CW_TEST_WC_TILT` (the shin leaning sideways), collars on the shin and the hull (`CW_TEST_WATER_COLLAR=0`: none), debug `wc.collar`, `wc.collar_foam`. `CW_TEST_WC_DECK` (the hull sunk with its deck 0.2 m under a wake). Test switches `CW_TEST_WATER_FOAM_BACK=old`, `CW_TEST_WATER_REFR_SCALE=old`, `CW_TEST_WATER_REFL_SHIFT=0|-1`, `CW_TEST_WATER_COLLAR_DRAW=0`.
+
+### Changed
+
+- **At Ultra the refraction is the whole view** (was 1.5 x `resolution_scale`, 0.75 by default): the outline of what shows under the surface no longer steps with the target's texels (measured: a slanted shin's submerged edge jitters no more than its dry edge, at four swell phases, GL and WebGPU). It costs 0.85 ms more of the reference GPU on GL in `fx_boom_water` at Ultra (95 % 0.79 to 0.91, paired rounds). High keeps half the view: 0.75 of it cost 0.66 ms there and still stepped.
+- **The reflection meets what stands in the water on a swell**: the planar reflection is mirrored about the drawn surface where the view looks (where its axis meets the water, within 60 m) instead of the rest level, and each pixel reads it moved by its own height over that. An object riding a crest had its reflection twice the crest's height under it. Calm water is mirrored about the rest level as before. A camera below the rest level in a trough now sees the reflection (it was black there). On a rising flank the gap stays about 1.4 cm.
+- **No dark slab where foam meets a submerged hull**: foam stands back over an object only where it meets the surface (none over its first 10 cm, then back with the depth, half by 14 cm and nearly all by 27 cm, with no edge), and the object's mask fades over at least a texel of the refraction at its outline. Before, a wake's foam stood back over anything visible under the surface down to 35 cm, which cut a dark, hard-edged slab out of it over a stern riding low (measured: P9, a dark deck 0.2 m down under a wake keeps 0.95 of the open water's foam brightness with 3.5 % of its pixels cut out; the v0.87 rule, `CW_TEST_WATER_FOAM_BACK=old`, cut out 13.3 %). At High the deck's submerged outline still steps with the half-view refraction's texels.
+- GL High costs 0.09 ms more of the reference GPU in `fx_boom_water` than v0.88.0 (95 % 0.03 to 0.14, paired rounds).
+- Gate `water-contact`: clear tropical water's fade (P2) is read with the planar reflection off (the shin's own reflection now meets it at the line and lies down its column, a few per cent of grey that crosses the faint tail of a long fade); `water-default-look`'s reference drawn again (the reflection about the local height, the foam rule and the collar layer move 2.1 % of its pixels over 16 levels; with those three as before, 0.001 %).
+- Every water sample's program tables (cw_samples, hidden_vis, runtime_nodes, water_contact, waterline) drawn again.
+
 ## v0.88.0 (2026-11-27)
 
 ### Fixed

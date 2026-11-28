@@ -11617,7 +11617,17 @@
      "readonly": false,
      "min": 0.05,
      "max": 1,
-     "doc": "Reflection / refraction targets' share of the view."
+     "doc": "Reflection target's share of the view (the refraction's too where it is larger than refraction_scale's)."
+    },
+    {
+     "name": "refraction_scale",
+     "type": "float",
+     "default": "0.5",
+     "stored": true,
+     "readonly": false,
+     "min": 0.05,
+     "max": 1,
+     "doc": "Refraction target's share of the view at High (0.5; Ultra 2 x, at most full size; never under the reflection's). What shows through the surface and its depth are read from it: one under the view's size steps along a submerged edge."
     },
     {
      "name": "debug_view",
@@ -11803,6 +11813,36 @@
      "stored": true,
      "readonly": false,
      "doc": "Where that rectangle is centred, in the water node's x, z."
+    },
+    {
+     "name": "collar_cells",
+     "type": "int",
+     "default": "256",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 512,
+     "doc": "Cells across the collar layer near the player (0: none; off at effects Low): what cw_water_collar writes the ring of bubbles where something stands through the surface into."
+    },
+    {
+     "name": "collar_size",
+     "type": "float",
+     "default": "10",
+     "stored": true,
+     "readonly": false,
+     "min": 0.1,
+     "max": 200,
+     "doc": "The collar layer's square, metres across (10: 4 cm cells at 256), kept around the point cw_water_ripple_follow names, or cw_water_collar_follow's once a game calls it."
+    },
+    {
+     "name": "collar_glow",
+     "type": "float",
+     "default": "1",
+     "stored": true,
+     "readonly": false,
+     "min": 0,
+     "max": 4,
+     "doc": "How much the light comes through a collar's piled-up bubbly water, as through a crest's thin top (0: none)."
     },
     {
      "name": "ripple_speed",

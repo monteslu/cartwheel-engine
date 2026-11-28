@@ -5860,6 +5860,16 @@
     "note": "where a shin and a hull cross a moving surface (water_contact: a 0.12 m shin and a 2.8 m hull riding a 2.16 m swell, at the crest, trough, rising and falling), GL and WebGPU through romdev, at native resolution against real water: P1 the shin 1 cm under the line keeps 0.75 to 1.1 of its luminance above it, P2 its contrast fades 90 to 10 % over the reference range of the water (5 to 25 cm murky harbour, 25 to 60 coastal, 60 to 150 clear tropical), P3 its middle jumps under 0.5 cm at the line. Controls: the water before v0.87 (CW_TEST_WATER_CONTACT=old, CW_TEST_WATER_REST_CLIP=1) fails P1 or P2 at the crest, the rest-level clip alone fails P1 there, the offset whatever the depth (CW_TEST_WATER_CONTACT=offset) fails P3, no shin is no object (not a pass), clear water see_through on harbour clarity misses the harbour range"
   },
   {
+    "name": "water-contact-edge",
+    "script": "tests/water-contact-edge.mjs",
+    "note": "the outline of what shows under the surface follows the object, not the refraction target's texels (water_contact: the 0.12 m shin leaning 20 degrees on a 2.16 m swell, four phases, GL and WebGPU through romdev, native 1080p, the planar reflection off): at Ultra (the refraction the whole view) the row-by-row jitter of each submerged edge 2.5 to 8 cm under the line is at most 0.1 px over the dry edge's above it; High (half the view) reported. Controls: Ultra's refraction as before v0.89 (CW_TEST_WATER_REFR_SCALE=old, 0.75 of the view) over the bound on a phase; no shin finds no edge"
+  },
+  {
+    "name": "water-contact-surface",
+    "script": "tests/water-contact-surface.mjs",
+    "note": "what the surface does where something stands through it (water_contact, GL and WebGPU through romdev, native 1080p): P8 at a grazing view with the surface a mirror, the shin's reflection meets its base within 1 cm at the crest, in the trough and falling (rising reported); P4 the collar (cw_water_collar) brightens the water beside the shin at the line 1.05 to 2 x the same frame without it in the trough and falling, and changes the shin's band under the line by under 3 % at every phase; P9 a dark deck 0.2 m under a wake keeps the foam over it (at least 0.85 of the open water's, at most 10 % of its pixels cut out). Controls: the reflection mirrored about the rest level (CW_TEST_WATER_REFL_SHIFT=0) and moved the wrong way (-1) each miss P8 on a phase; no shin finds no reflection; the collar layer not drawn (CW_TEST_WATER_COLLAR_DRAW=0) misses P4; foam standing back as v0.87 had it (CW_TEST_WATER_FOAM_BACK=old) misses P9"
+  },
+  {
     "name": "waterline",
     "script": "tests/waterline.mjs",
     "note": "where objects meet the water (cartwheel/waterline.h, samples/waterline at 1920 x 1080, GL and WebGPU through romdev, four phases of a gentle swell): a strip down a fabric shin at native scale has a wet band 4 to 30 cm over the line that agrees with the state within 4 cm, 0.25 to 0.8 of the dry brightness just over the line, a meniscus line at the contact at least 1.05 x the band over it, and under the line the part shows through the water; controls: no part (WATERLINE_OFF=1) fails the band, darkening and meniscus checks, the mark held at the line (WATERLINE_DRY=1) fails the band check"

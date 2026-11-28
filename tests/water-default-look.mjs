@@ -8,7 +8,10 @@
 // at the waterline, and nothing else. Drawn again at v0.87.0 on the test GPU (GL) because v0.87.0 joins what is under the
 // surface to what is above it at the line (the refraction clipped at the waves' height, its offset grown with the water
 // over a point, the two-way fade): that moved a fraction of a per cent of these pixels, at the boat's and the crates' waterlines and the
-// submerged crate, and nothing else. This run must match it on GL and on WebGPU, on the test GPU and on a software
+// submerged crate, and nothing else. Drawn again at v0.89.0 on the test GPU (GL) because v0.89.0 mirrors the reflection
+// about the drawn surface and moves each pixel's read by its own height, lets foam float over what lies deeper than
+// 10 cm under the surface and draws the collar layer: 2.1 % of these pixels over 16 levels, and 0.001 % with those three
+// as before (CW_TEST_WATER_REFL_SHIFT=0, CW_TEST_WATER_FOAM_BACK=old, CW_TEST_WATER_COLLAR_DRAW=0). This run must match it on GL and on WebGPU, on the test GPU and on a software
 // renderer: those differ from each other by under 0.05% of these pixels over 16 levels. Reading the floor map and the
 // ripple grid at a surface point's rest position (the fault in v0.26.0 to v0.28.4) moves 3.8% of them.
 //

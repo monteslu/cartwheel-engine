@@ -169,6 +169,7 @@ static void water_init(cw_node n, void *data) {
   d->flow_speed = 0.03f;
   d->reflection = d->refraction = true;
   d->resolution_scale = 0.5f;
+  d->refraction_scale = 0.5f;
   d->debug_range[0] = -2, d->debug_range[1] = 2;
   d->floor_map_size = 128;
   d->floor_range = 40;
@@ -184,6 +185,9 @@ static void water_init(cw_node n, void *data) {
   d->scatter = 0.6f;
   d->glint = 1.0f;
   d->ripple_cells = 128;
+  d->collar_cells = 256;
+  d->collar_size = 10;
+  d->collar_glow = 1;
   d->ripple_speed = 2.2f;
   d->ripple_damping = 1.5f;
   d->ripple_strength = 1.0f;
@@ -889,6 +893,16 @@ static bool water_rest_clip(void) {
   const char *e = cw_test_env("CW_TEST_WATER_REST_CLIP");
   return e && atoi(e) > 0;
 }
+/* CW_TEST_WATER_REFL_SHIFT (the gates' controls): 0 the reflection mirrored about the rest level and read as it is,
+ * as before v0.89; -1 its per-pixel move the wrong way (the sign proved by a control) */
+static bool water_refl_local(void) {
+  const char *e = cw_test_env("CW_TEST_WATER_REFL_SHIFT");
+  return !(e && *e && atof(e) == 0);
+}
+static float water_refl_shift(void) {
+  const char *e = cw_test_env("CW_TEST_WATER_REFL_SHIFT");
+  return e && *e ? (float)atof(e) : 1.0f;
+}
 static float water_refr_lift(const water3d *d) { return water_rest_clip() ? 0.0f : d->sun[3] + 0.05f; }
 
 /* the refraction: three.c's render target on GL; on WebGPU a target of the engine's own whose depth is copied for
@@ -939,6 +953,18 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
   /* (one-pass split screen: the view's own size, as a view drawn on its own has) */
   int vw = ctx->view_count > 0 ? ctx->view_rect[2] : ctx->width, vh = ctx->view_count > 0 ? ctx->view_rect[3] : ctx->height;
   int w = (int)lroundf((float)vw * sc), h = (int)lroundf((float)vh * sc);
+  /* the refraction at its own scale (half the view at High, the whole view at Ultra by default), never under the
+   * reflection's: what shows through the surface, an object's edge under the line, is read from it texel by texel, and
+   * under the view's size a submerged edge steps (at half the view 2 px every 2 rows; 0.75 still steps, measured, and
+   * costs 0.66 ms of the reference GPU at High). CW_TEST_WATER_REFR_SCALE=old: the reflection's scale, as before v0.89
+   * (the gates' control) */
+  float rsc = d->refraction_scale * (q == CW_QUALITY_ULTRA ? 2.0f : 1.0f);
+  {
+    const char *e = cw_test_env("CW_TEST_WATER_REFR_SCALE");
+    if (e && !strcmp(e, "old")) rsc = sc;
+  }
+  rsc = rsc < sc ? sc : rsc > 1 ? 1 : rsc;
+  int rw = (int)lroundf((float)vw * rsc), rh = (int)lroundf((float)vh * rsc);
   t3_camera *cam = ctx->camera;
   const t3_mat4 *m = cw_node3d_global_transform(n);
   t3_vec3 wpos = { m->e[12], m->e[13], m->e[14] };
@@ -946,13 +972,20 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
   t3_vec3 cpos = { cam->base.matrix_world.e[12], cam->base.matrix_world.e[13], cam->base.matrix_world.e[14] };
   /* the camera under the water sees no reflection from above (r187 skips the render) */
   bool below = v3dot(v3sub(wpos, cpos), up) > 0;
+  /* the reflection is mirrored about the drawn surface where the view looks (refl_h over the rest level), not the rest
+   * level: on a swell an object riding a crest then meets its reflection there, and each pixel's own height over that
+   * moves its read (water_shading.mjs). Calm water: the rest level, as before */
+  t3_vec3 mpos = v3add(wpos, v3scale(up, d->refl_h));
   /* the camera under the drawn waves (this view's): what the refraction is drawn for. A camera in a trough is under the
    * rest level but above the water, and the surface it sees is seen from above */
   bool under = water_rest_clip() ? below : d->cam_under;
+  /* the reflection is drawn while the camera is over its mirror plane and above the drawn waves: a camera in a trough
+   * under the rest level still sees the trough mirror what stands in it */
+  bool rbelow = water_refl_local() ? d->cam_under || v3dot(v3sub(mpos, cpos), up) > 0 : below;
   bool first = !d->refl;
   d->refl = target(d->refl, d->refl_on ? w : 1, d->refl_on ? h : 1);
   /* always with a depth texture (1 x 1 when off): the surface's program samples one in every state */
-  if (!cw__wgpu_on()) d->refr = refr_target(d->refr, d->refr_on ? w : 1, d->refr_on ? h : 1, true);
+  if (!cw__wgpu_on()) d->refr = refr_target(d->refr, d->refr_on ? rw : 1, d->refr_on ? rh : 1, true);
   d->refr_depth_ok = false;
   d->refr_above = false;
   if (!d->vcam) d->vcam = t3_perspective_camera_new(cam->fov, cam->aspect, cam->near, cam->far);
@@ -966,18 +999,18 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
     uint32_t own = l0 && atoi(l0) > 0 ? 1u : cam->base.layers & ~CW__VIEW_LAYERS;
     v->base.layers = own | (ctx->view_count > 0 ? (cam->base.layers & CW__VIEW_LAYERS) : 0);
   }
-  if (d->refl_on && !below) {
+  if (d->refl_on && !rbelow) {
     /* r187 ReflectorNode.updateBefore, with the water's up as the normal */
-    t3_vec3 view = v3add(v3neg(v3reflect(v3sub(wpos, cpos), up)), wpos);
+    t3_vec3 view = v3add(v3neg(v3reflect(v3sub(mpos, cpos), up)), mpos);
     t3_vec3 look = v3add(rot3(&cam->base.matrix_world, (t3_vec3){ 0, 0, -1 }), cpos);
-    t3_vec3 tgt = v3add(v3neg(v3reflect(v3sub(wpos, look), up)), wpos);
+    t3_vec3 tgt = v3add(v3neg(v3reflect(v3sub(mpos, look), up)), mpos);
     v->base.matrix_world_external = false;
     v->base.position = view;
     v->base.up = v3reflect(rot3(&cam->base.matrix_world, (t3_vec3){ 0, 1, 0 }), up);
     t3_object_look_at(v, tgt.x, tgt.y, tgt.z);
     t3_object_update_matrix_world(v, true);
     v->projection_matrix = ctx->proj;
-    oblique(&v->projection_matrix, &v->matrix_world_inverse, up, wpos);
+    oblique(&v->projection_matrix, &v->matrix_world_inverse, up, mpos);
     t3_mat4_invert(&v->projection_matrix_inverse, &v->projection_matrix);
     /* backdrops lighting the scene (cartwheel/backdrop.h environment): where the mirrored view finds nothing of the
      * scene it shows their worlds, the environment's sharpest level drawn as its background (the backdrops are as far
@@ -1006,7 +1039,7 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
    * sea under a dark blue sky stays dark blue, not black. The 1 x 1 target is drawn by an empty scene whose background
    * is that colour (exact, in the scene's linear HDR, on both backends). */
   t3_scene *s3 = ctx->scene3d;
-  d->refl_bg = !d->refl_on && !below && s3 && !s3->environment && !s3->background_texture && !water_sky_only();
+  d->refl_bg = !d->refl_on && !rbelow && s3 && !s3->environment && !s3->background_texture && !water_sky_only();
   if (d->refl_bg) {
     if (!wt->bg_scene) wt->bg_scene = t3_scene_new();
     float a = 1;
@@ -1031,7 +1064,7 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
     if (water_rest_clip()) lift = 0;
     oblique(&v->projection_matrix, &vi, v3neg(up), v3add(wpos, v3scale(up, lift)));
     t3_mat4_invert(&v->projection_matrix_inverse, &v->projection_matrix);
-    render_refr(ctx, wt, d, v, w, h);
+    render_refr(ctx, wt, d, v, rw, rh);
     memcpy(d->refr_inv, v->projection_matrix_inverse.e, sizeof d->refr_inv);
     d->refr_depth_ok = cw__wgpu_on() ? d->wg_dep_tex != NULL : d->refr->depth_texture != NULL;
     v->base.matrix_world_external = false;
@@ -1039,7 +1072,7 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
     /* under the water: the refraction target holds the view up through the surface (the scene above the rest
      * level), which the surface shows inside its window of light */
     /* (three.c's own target on both backends: it draws the sky behind the scene, and no depth is read from below) */
-    d->refr = refr_target(d->refr, w, h, true);
+    d->refr = refr_target(d->refr, rw, rh, true);
     t3_object_set_matrix_world(v, &cam->base.matrix_world);
     v->projection_matrix = ctx->proj;
     t3_mat4 vi;
@@ -1060,8 +1093,8 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
   if (cw__wgpu_on() && (!d->wg_dep_tex || !d->wg_col_tex)) render_refr(ctx, wt, d, NULL, 1, 1);
   wt->stats.reflection_w = d->refl_on ? w : 0;
   wt->stats.reflection_h = d->refl_on ? h : 0;
-  wt->stats.refraction_w = d->refr_on ? w : 0;
-  wt->stats.refraction_h = d->refr_on ? h : 0;
+  wt->stats.refraction_w = d->refr_on ? rw : 0;
+  wt->stats.refraction_h = d->refr_on ? rh : 0;
 }
 
 /* ── the extension's fill hook ──────────────────────────────────────── */
@@ -1075,6 +1108,7 @@ static void wv_put(water3d *d, int k) {
   memcpy(d->view_rect, v->rect, sizeof d->view_rect);
   memcpy(d->cam_world, v->cam_world, sizeof d->cam_world);
   d->cam_under = v->cam_under;
+  d->refl_h = v->refl_h;
 }
 
 static void fill(t3_extension_ctx *c, void *user) {
@@ -1107,12 +1141,18 @@ static void fill(t3_extension_ctx *c, void *user) {
   {
     /* the contact (water_shading.mjs): the refraction's offset is whole 1 m under the surface and nothing at it; the
      * leak check's bound 0.3 m; the two-way path. CW_TEST_WATER_CONTACT (the gates' controls): "offset" the offset
-     * whatever the depth and no leak check, "path" the vertical depth alone, "old" both (the look before v0.87) */
+     * whatever the depth and no leak check, "path" the vertical depth alone, "old" both (the look before v0.87). CW_TEST_WATER_FOAM_BACK=old: foam stands back over
+     * an object's whole visible depth, as v0.87 to v0.88 had it */
     const char *e = cw_test_env("CW_TEST_WATER_CONTACT");
     bool old = e && !strcmp(e, "old");
     bool off = old || (e && !strcmp(e, "offset")), path = old || (e && !strcmp(e, "path"));
-    v[0] = off ? 0.0f : 1.0f, v[1] = off ? 0.0f : 0.3f, v[2] = path ? 0.0f : 1.0f, v[3] = 0;
+    const char *fb = cw_test_env("CW_TEST_WATER_FOAM_BACK");
+    v[0] = off ? 0.0f : 1.0f, v[1] = off ? 0.0f : 0.3f, v[2] = path ? 0.0f : 1.0f, v[3] = fb && !strcmp(fb, "old") ? 1.0f : 0.0f;
     t3_extension_set_uniform(c, "waterContact", v, 4);
+    /* the reflection about each point's own height: the target is mirrored about refl_h, the surface where the view
+     * looks, and each pixel reads it moved by its own height over that (water_shading.mjs) */
+    v[0] = water_refl_local() ? water_refl_shift() : 0.0f, v[1] = d->refl_h, v[2] = d->collar_glow, v[3] = d->ripple_strength;
+    t3_extension_set_uniform(c, "waterEdge", v, 4);
   }
   v[0] = d->grid_off[0], v[1] = d->grid_off[1], v[2] = d->grid_mode == 1 ? 1.0f : 0.0f, v[3] = d->foam_scale;
   t3_extension_set_uniform(c, "waterGrid", v, 4);
@@ -1164,6 +1204,17 @@ static void fill(t3_extension_ctx *c, void *user) {
     v[0] = d->ripple_center[0], v[1] = d->ripple_center[1], v[2] = on ? 1.0f / (float)d->rip_nx : 1.0f, v[3] = on ? 1.0f / (float)d->rip_nz : 1.0f;
     t3_extension_set_uniform(c, "waterRippleRect", v, 4);
     t3_extension_set_texture(c, "waterRippleMap", on ? d->rip_tex : nm0);
+    /* the collar layer: its centre, size and 1 / cells (0: none); CW_TEST_WATER_COLLAR_DRAW=0 draws none (the gates'
+     * control) */
+    const char *fe = cw_test_env("CW_TEST_WATER_COLLAR_DRAW");
+    bool fon = d->fine.tex && d->fine.n > 0 && !(fe && *fe && atoi(fe) == 0);
+    float fs = fon ? d->fine.cell * (float)d->fine.n : 1.0f;
+    /* (its centre in the world: the surface reads it where the drawn, displaced surface is, which on a steep crest lies
+     * a good part of a metre from its rest position, so a collar sits where the object pierces the drawn water) */
+    t3_vec3 fc = t3_vec3_apply_mat4((t3_vec3){ d->fine.cx, 0, d->fine.cz }, &o->matrix_world);
+    v[0] = fc.x, v[1] = fc.z, v[2] = fs, v[3] = fon ? 1.0f / (float)d->fine.n : 0.0f;
+    t3_extension_set_uniform(c, "waterFine", v, 4);
+    t3_extension_set_texture(c, "waterFineMap", fon ? d->fine.tex : nm0);
   }
   t3_texture *nm = nm0;
   t3_extension_set_texture(c, "waterNormal", nm);
@@ -1281,6 +1332,22 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
       /* the camera under the surface (the drawn waves at its x, z): the surface is then seen from below */
       float ch = cw_water_height_at(n, cw[12], cw[14], t);
       d->cam_under = cw[13] < ch;
+      /* the reflection's mirror height: the drawn surface where the view's axis meets it (four steps from the rest
+       * level: the axis meets the plane at the last height found, the waves' height there is the next; within 60 m, a
+       * view looking up 20 m out ahead), kept 0.3 m under the camera */
+      d->refl_h = 0;
+      if (water_refl_local()) {
+        const t3_mat4 *m = cw_node3d_global_transform(n);
+        float ry = m->e[13], fx = -cw[8], fy = -cw[9], fz = -cw[10], top = cw[13] - ry - 0.3f, h = 0;
+        for (int it = 0; it < 4; it++) {
+          float s = fy < -0.02f ? (cw[13] - ry - h) / -fy : 20.0f;
+          if (s > 60.0f) s = 60.0f;
+          if (s < 0) s = 0;
+          h = cw_water_height_at(n, cw[12] + fx * s, cw[14] + fz * s, t) - ry;
+          if (h > top) h = top;
+        }
+        d->refl_h = h;
+      }
     }
     cw__ripples_upload(d);
     {
@@ -1345,6 +1412,14 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
     wt->stats.surfaces++;
     if (d->normal_flat) wt->stats.flat_normal++;
     wt->stats.see_light = d->see_light;
+    wt->stats.collar_cells = d->fine.c ? d->fine.n : 0;
+    wt->stats.collar_awake = d->fine.awake ? 1 : 0;
+    {
+      float mf = 0;
+      if (d->fine.c)
+        for (int k = 0; k < d->fine.n * d->fine.n; k++) mf = d->fine.c[k] > mf ? d->fine.c[k] : mf;
+      wt->stats.collar_foam = mf > 1 ? 1 : mf;
+    }
     wt->stats.sun_light = d->lit_by_light;
     /* one-pass split screen: this view's camera values kept for the draws (its planar reflection and refraction are
      * its own targets, pv); a surface one view sees from below and another from above (its material's environment term
@@ -1358,6 +1433,7 @@ static void water_exec(cw_pass_ctx *ctx, void *u) {
       v->cam_tan2 = d->cam_tan2;
       memcpy(v->cam_world, d->cam_world, sizeof v->cam_world);
       v->cam_under = d->cam_under;
+      v->refl_h = d->refl_h;
       {
         /* its rectangle in screen uv (three.js's, from the top left: GL's rows are bottom-up, the WebGPU scene target's are
          * drawn flipped, so the view's bottom-up rows are its top-down ones there) */
@@ -1457,7 +1533,8 @@ static const cw_prop water_props[] = {
   CW_PROP_FIELD(water3d, flow_map, CW_T_STRING, CW_PROP_DEFAULT, "Optional image: RG = flow direction (0.5 = still) over the rectangle."),
   CW_PROP_FIELD(water3d, reflection, CW_T_BOOL, CW_PROP_DEFAULT, "Planar reflection (Medium and up)."),
   CW_PROP_FIELD(water3d, refraction, CW_T_BOOL, CW_PROP_DEFAULT, "Planar refraction (High and up)."),
-  CW_PROP_FIELD_RANGE(water3d, resolution_scale, CW_T_FLOAT, 0.05, 1, "Reflection / refraction targets' share of the view."),
+  CW_PROP_FIELD_RANGE(water3d, resolution_scale, CW_T_FLOAT, 0.05, 1, "Reflection target's share of the view (the refraction's too where it is larger than refraction_scale's)."),
+  CW_PROP_FIELD_RANGE(water3d, refraction_scale, CW_T_FLOAT, 0.05, 1, "Refraction target's share of the view at High (0.5; Ultra 2 x, at most full size; never under the reflection's). What shows through the surface and its depth are read from it: one under the view's size steps along a submerged edge."),
   { .name = "debug_view", .type = CW_T_ENUM, .flags = CW_PROP_DEFAULT, .offset = offsetof(water3d, debug_view),
     .size = sizeof(int), .enum_names = debug_names, .doc = "HEIGHT: the surface height as colour (tests)." },
   CW_PROP_FIELD_RANGE(water3d, floor_map_size, CW_T_INT, 0, 512, "Cells along the longer side of the baked floor depth map (0: no shore shading)."),
@@ -1478,6 +1555,9 @@ static const cw_prop water_props[] = {
   CW_PROP_FIELD_RANGE(water3d, ripple_cells, CW_T_INT, 0, 512, "Cells along the longer side of the interactive ripple grid (0: no ripples; quality scales it)."),
   CW_PROP_FIELD(water3d, ripple_size, CW_T_VEC2, CW_PROP_DEFAULT, "The rectangle the ripple grid covers, metres (0: the whole water)."),
   CW_PROP_FIELD(water3d, ripple_center, CW_T_VEC2, CW_PROP_DEFAULT, "Where that rectangle is centred, in the water node's x, z."),
+  CW_PROP_FIELD_RANGE(water3d, collar_cells, CW_T_INT, 0, 512, "Cells across the collar layer near the player (0: none; off at effects Low): what cw_water_collar writes the ring of bubbles where something stands through the surface into."),
+  CW_PROP_FIELD_RANGE(water3d, collar_size, CW_T_FLOAT, 0.1, 200, "The collar layer's square, metres across (10: 4 cm cells at 256), kept around the point cw_water_ripple_follow names, or cw_water_collar_follow's once a game calls it."),
+  CW_PROP_FIELD_RANGE(water3d, collar_glow, CW_T_FLOAT, 0, 4, "How much the light comes through a collar's piled-up bubbly water, as through a crest's thin top (0: none)."),
   CW_PROP_FIELD_RANGE(water3d, ripple_speed, CW_T_FLOAT, 0, 50, "How fast ripples travel, m/s."),
   CW_PROP_FIELD_RANGE(water3d, ripple_damping, CW_T_FLOAT, 0, 60, "How fast ripples die, per second."),
   CW_PROP_FIELD_RANGE(water3d, ripple_strength, CW_T_FLOAT, 0, 8, "How much the ripples bend the surface normal."),

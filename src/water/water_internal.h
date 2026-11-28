@@ -38,6 +38,7 @@ typedef struct water3d {
   const char *flow_map;
   bool reflection, refraction;
   float resolution_scale;
+  float refraction_scale; /* the refraction target's share of the view at High (Ultra 2 x, at most 1), at least the reflection's */
   int debug_view;
   float debug_range[2];
   /* shore and depth shading, foam */
@@ -52,6 +53,17 @@ typedef struct water3d {
   int ripple_cells;
   float ripple_size[2], ripple_center[2], ripple_speed, ripple_damping, ripple_strength, foam_fade, foam_spread;
   float rain, rain_size, rain_strength;
+  /* the collar layer near the player (ripples.c): collar_cells across a square collar_size metres wide, kept around the
+   * ripple grid's follow point or cw_water_collar_follow's; cw_water_collar stamps the bubbles into it */
+  int collar_cells;
+  float collar_size, collar_glow;
+  struct water_fine {
+    float *c; /* the collars' bubbles (cw_water_collar), 0..1 */
+    int n, built, quality;
+    float cell, cx, cz; /* cell size (m); the square's centre (water-local x, z) */
+    bool awake, upload, own; /* own: cw_water_collar_follow has placed it (cw_water_ripple_follow no longer moves it) */
+    t3_texture *tex;
+  } fine;
   const char *splash_fx;
   float splash_fx_min;
   /* caustics and the view from under the water (underwater.c) */
@@ -111,7 +123,8 @@ typedef struct water3d {
   bool cam_under; /* this view's camera is under the surface */
   /* one-pass split screen (no planar reflection or refraction): each view's camera values, which the fill hook puts in
    * for the draw's camera (every view draws after every view's pass) */
-  struct water_view { const void *camera; float cam[4], grid_off[2], cam_tan2, cam_world[16], rect[4]; bool cam_under; } wv[4];
+  struct water_view { const void *camera; float cam[4], grid_off[2], cam_tan2, cam_world[16], rect[4], refl_h; bool cam_under; } wv[4];
+  float refl_h; /* the height over the rest level the reflection is mirrored about: the drawn surface where the view looks */
   float view_rect[4]; /* the drawn view's rectangle in screen uv, from the top left (0, 0, 1, 1 but in one pass) */
   int wv_n;
   /* one-pass split screen with a planar reflection or refraction: views 1 to 3's targets and values (view 0's are the
