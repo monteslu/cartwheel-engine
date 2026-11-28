@@ -5082,6 +5082,11 @@
     "note": "the velocity buffer of the same scene: the bar's turn, the character's limbs and the two counter-turning rings. Control: camera motion only, an all-grey frame"
   },
   {
+    "name": "particle-fs-sim",
+    "script": "tests/particle-fs-sim.mjs",
+    "note": "GL particles simulated in a fragment pass over float state textures instead of transform feedback (src/fx/particles3d.c): samples/fx_particles at frames 120 and 260 and samples/fx_sub_emitters at 200 natively on GL, every system's GPU alive count equal to the transform feedback run's (CW_TEST_PSYS_TF=1) and to the CPU's emission function, position sums and the picture as near to the WebGPU run's as the transform feedback run's, no transform feedback session (fx.feedback 0, the control run's 6); CONTROL: a frame early must fail the comparison; native GL and WebGPU"
+  },
+  {
     "name": "velocity-objects",
     "script": "tests/velocity-objects.mjs",
     "note": "the GL velocity pass's moved meshes with their previous poses uploaded in one run before the draws and the target's framebuffer kept (src/render/velocity.c): samples/motion_vectors with its crowd (MV_CROWD=1, 63 meshes in the velocity target: skinned, instanced and plain) reads back the same velocity buffer bit for bit (cw.velocity.hash) and the same picture as the way before (CW_TEST_VELOCITY_LEGACY=1), at frames 75 and 200, and the same again with the whole-scene render the pass used before its own pass (CW_TEST_VELOCITY_SCENE_RENDER=1); CONTROL: camera motion only (CW_TEST_VELOCITY_OBJECTS=0) must change the hash. samples/foliage_field with DITHER fades under a dollying camera: the meshes drawn into the velocity target the same as with no grass (FOL_NOGRASS=1; the cells only rescale their instances); CONTROL: CW_TEST_VELOCITY_SCALE_ONLY=0 draws cells and changes the buffer; native GL"

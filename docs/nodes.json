@@ -8168,7 +8168,7 @@
   {
    "name": "GPUParticles3D",
    "parent": "Node3D",
-   "doc": "GPU particles: transform feedback simulation, instanced billboards / meshes, trails (particles.h).",
+   "doc": "GPU particles: a GPU simulation (a fragment pass on GL, compute on WebGPU), instanced billboards / meshes, trails (particles.h).",
    "signals": [],
    "properties": [
     {
