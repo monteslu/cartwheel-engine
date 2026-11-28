@@ -323,6 +323,11 @@ void cw__pipeline_probe_caps(void);
 /* velocity.c: the meshes that moved since the last frame, drawn over the camera's motion in the velocity
  * target (the scene's depth tests them); returns how many were drawn */
 int cw__velocity_objects(cw_pass_ctx *ctx, const cw_rt *vel);
+/* an instanced mesh whose instance matrices are only ever rewritten to rescale its instances in place (terrain
+ * scatter: the fade and the LOD crossfade, which write a cell's matrices every frame the camera moves): the
+ * velocity pass counts those writes as standing still (camera motion only), its world matrix still counts. on:
+ * false forgets it (the mesh is going) */
+void cw__velocity_scale_only(const t3_object *o, bool on);
 /* built-in passes (pipeline_post.c) */
 void cw__pipeline_add_builtin_passes(cw_pipeline *p);
 /* GL helpers (pipeline_gl.c) */

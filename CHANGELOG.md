@@ -4,6 +4,22 @@ What each release added, changed and fixed. Releases are git tags; each one's
 prebuilt SDKs (one per target, see [docs/sdk.md](docs/sdk.md)) are on its
 GitHub release. The guides in `docs/guides/` cover each feature in depth.
 
+## v0.88.0 (2026-11-27)
+
+### Fixed
+
+- **GL: a scene with many skinned figures no longer costs about a millisecond of main-thread CPU a frame** (a regression of v0.86.0's three.c v0.187.23): each skinned draw wrote its bone matrices to the uniform ring by itself, a map, an unmap and a fence poll a draw, and with Mesa's glthread each of those waits for the driver thread (a CPU profile: the driver's work moved from its own thread onto the game's, 19 % of the main thread's samples against 11 %). **three.c v0.187.24** packs them after the per-draw blocks of each render call and caster pass, one write each. A third-person scene with 34 animated figures at 1080p (Radeon RX 7600, radeonsi): the frame's CPU time 1.2 ms lower than v0.87.0's in every one of 8 paired rounds (0.9 ms in a second, noisier run), with the old per-draw writes back (`T3_TEST_RING_SLICE_EACH=1`) 0.2 ms. Carts had no such wait (no map, no fences) but made one `glBufferSubData` host call a skinned draw; they now make one a render call (a 19-bone figure: 1200 such calls in 120 frames, now 964).
+
+### Changed
+
+- **three.c v0.187.24: GL's uniform ring is a `GL_DYNAMIC_DRAW` buffer** (radeonsi keeps a `GL_STREAM_DRAW` one in system memory, read over the bus on a discrete card): with the packing above the scene's GL frame takes 0.26 ms less GPU time than v0.87.0's (10 of 10 paired rounds; the scene pass 0.26 ms less), 0.15 ms of it from the buffer's placement (`T3_TEST_RING_STREAM=1`).
+- **The GL velocity pass draws the moved meshes as a pass of their own** (three.c's new `t3_renderer_render_objects`) instead of rendering the whole scene with everything else hidden: no scene walk, lights or shadow step for a few draws; about 0.25 ms less CPU a frame in the scene above, the same velocity buffer bit for bit (`CW_TEST_VELOCITY_SCENE_RENDER=1` draws the old way).
+- **Terrain scatter cells count as standing still for the velocity pass** (`src/render/velocity.c`, `src/terrain/scatter.c`): the DITHER fade and LOD crossfade rewrite a cell's instance matrices every frame the camera moves, but only rescale each instance where it stands, so the cells take the camera's motion, as the wind's sway does; whole grass and stone cells no longer go through the velocity draw. The GL velocity pass in the scene above: 0.40 ms (v0.87.0) to 0.31 ms with all of this, 0.36 ms with scatter writes counted as motion (`CW_TEST_VELOCITY_SCALE_ONLY=0`). WebGPU unchanged (0.10 ms).
+
+### Added
+
+- Gate `velocity-objects` also holds the whole-scene velocity render to the moved meshes' own pass, and samples/foliage_field (DITHER fades, a dollying camera) to the meshes drawn with no grass at all (no scatter cell drawn); control `CW_TEST_VELOCITY_SCALE_ONLY=0`.
+
 ## v0.87.0 (2026-11-27)
 
 ### Changed

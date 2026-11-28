@@ -5084,7 +5084,7 @@
   {
     "name": "velocity-objects",
     "script": "tests/velocity-objects.mjs",
-    "note": "the GL velocity pass's moved meshes with their previous poses uploaded in one run before the draws and the target's framebuffer kept (src/render/velocity.c): samples/motion_vectors with its crowd (MV_CROWD=1, 63 meshes in the velocity target: skinned, instanced and plain) reads back the same velocity buffer bit for bit (cw.velocity.hash) and the same picture as the way before (CW_TEST_VELOCITY_LEGACY=1), at frames 75 and 200; CONTROL: camera motion only (CW_TEST_VELOCITY_OBJECTS=0) must change the hash; native GL"
+    "note": "the GL velocity pass's moved meshes with their previous poses uploaded in one run before the draws and the target's framebuffer kept (src/render/velocity.c): samples/motion_vectors with its crowd (MV_CROWD=1, 63 meshes in the velocity target: skinned, instanced and plain) reads back the same velocity buffer bit for bit (cw.velocity.hash) and the same picture as the way before (CW_TEST_VELOCITY_LEGACY=1), at frames 75 and 200, and the same again with the whole-scene render the pass used before its own pass (CW_TEST_VELOCITY_SCENE_RENDER=1); CONTROL: camera motion only (CW_TEST_VELOCITY_OBJECTS=0) must change the hash. samples/foliage_field with DITHER fades under a dollying camera: the meshes drawn into the velocity target the same as with no grass (FOL_NOGRASS=1; the cells only rescale their instances); CONTROL: CW_TEST_VELOCITY_SCALE_ONLY=0 draws cells and changes the buffer; native GL"
   },
   {
     "name": "motion-vectors",

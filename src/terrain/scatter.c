@@ -26,6 +26,7 @@
 #include "cartwheel/quality.h"
 #include "terrain_internal.h"
 #include "../render/view_layers.h"
+#include "../render/pipeline_internal.h"
 
 #define INST_F 12 /* x y z scale qx qy qz qw rank r g b (the instance colour, when the layer has one) */
 #define CELL_MAX 8192
@@ -332,6 +333,7 @@ static void cell_free_view(tr_scatter *s, sc_cell *c, int view) {
     for (int p = 0; p < CW_SCATTER_PARTS; p++)
       if (cv->im[l][p]) {
         if (s->parent) t3_object_remove(s->parent, cv->im[l][p]);
+        cw__velocity_scale_only(&cv->im[l][p]->mesh.base, false);
         t3_release(cv->im[l][p]);
         cv->im[l][p] = NULL;
       }
@@ -806,6 +808,8 @@ static void scatter_one(cw_terrain *t, tr_scatter *s, t3_vec3 cam, const t3_frus
             sph.radius = sqrtf(ex * ex + ey * ey + ez * ez);
             t3_instanced_mesh_set_bounding_sphere(im, &sph);
             im->mesh.base.layers = layer;
+            /* (its instances only ever rescale in place: still for the velocity pass, as the wind is) */
+            cw__velocity_scale_only(&im->mesh.base, true);
             c->v[view].im[l][p] = im;
             if (s->parent) t3_object_add(s->parent, im);
           }

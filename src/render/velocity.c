@@ -52,6 +52,7 @@ typedef struct vel_obj {
   float *inst[2];
   int inst_n, inst_cap;
   uint32_t inst_ver;
+  bool inst_live; /* scale only (cw__velocity_scale_only): the previous matrices are the attribute's as they are now */
   bool inst_same; /* inst[1] was not written: the last frame's matrices are inst[0]'s */
   t3_texture *inst_tex;
   uint64_t inst_tex_frame; /* the frame the texture holds the previous matrices of (+ 1) */
@@ -117,6 +118,25 @@ static vel_state *state_of(cw_tree *t) {
   return v;
 }
 
+/* the instanced meshes cw__velocity_scale_only names (object ids) */
+static cw_map scale_only;
+static bool scale_only_init;
+void cw__velocity_scale_only(const t3_object *o, bool on) {
+  if (!o) return;
+  if (!scale_only_init) cw_map_init(&scale_only, CW_MEM_RENDER), scale_only_init = true;
+  if (on) cw_map_set(&scale_only, o->id, 1);
+  else cw_map_remove(&scale_only, o->id);
+}
+/* CW_TEST_VELOCITY_SCALE_ONLY=0 (a gate control): such meshes count as moved whenever their matrices are written,
+ * as before */
+static bool is_scale_only(const t3_object *o) {
+  if (!scale_only_init || !cw_map_size(&scale_only)) return false;
+  uint64_t val;
+  if (!cw_map_get(&scale_only, o->id, &val)) return false;
+  const char *e = cw_test_env("CW_TEST_VELOCITY_SCALE_ONLY");
+  return !(e && *e == '0');
+}
+
 /* CW_TEST_VELOCITY_OBJECTS=0 (a gate control, read as cw_test_env reads on every host): only the camera's
  * motion, as before this file */
 static bool objects_off(void) {
@@ -180,11 +200,17 @@ static bool obj_update(vel_state *v, vel_obj *e, t3_object *o) {
       fresh = true;
     }
     size_t bytes = (size_t)n * 16 * sizeof(float);
+    e->inst_live = is_scale_only(o);
     if (fresh || e->inst_n != n) {
-      memcpy(e->inst[0], a->array, bytes);
+      if (!e->inst_live) memcpy(e->inst[0], a->array, bytes);
       e->inst_same = true;
       e->inst_ver = a->version;
       e->inst_n = n;
+    } else if (a->version != e->inst_ver && e->inst_live) {
+      /* rescaled in place (a scatter cell's fade): still; a world matrix that moves it draws the matrices as they
+       * are now for the last frame too (inst_live: read from the attribute, nothing copied) */
+      e->inst_same = true;
+      e->inst_ver = a->version;
     } else if (a->version != e->inst_ver) {
       float *b = e->inst[1];
       e->inst[1] = e->inst[0];
@@ -211,7 +237,7 @@ typedef struct vel_draw { t3_mesh *m; t3_material **mats; int n; t3_material *on
 typedef CW_ARRAY(vel_draw) draw_list;
 typedef CW_ARRAY(t3_object *) hide_list;
 
-/* hide what the velocity draw leaves out, collect the meshes that moved */
+/* collect the meshes that moved; hidden: what the velocity draw leaves out is hidden (a whole-scene render) */
 static void walk(vel_state *v, t3_object *o, draw_list *draws, hide_list *hidden) {
   if (!o->visible) return;
   bool drawable = o->type == T3_MESH || o->type == T3_SKINNED_MESH || o->type == T3_INSTANCED_MESH || o->type == T3_SPRITE ||
@@ -238,7 +264,7 @@ static void walk(vel_state *v, t3_object *o, draw_list *draws, hide_list *hidden
         if (moved) cw_array_push(draws, (vel_draw){ .m = m });
       }
     }
-    if (!moved) {
+    if (!moved && hidden) {
       o->visible = false;
       cw_array_push(hidden, o);
     }
@@ -289,7 +315,7 @@ static void obj_textures(vel_state *v, vel_obj *e, const t3_object *o) {
       e->inst_tex_frame = 0;
     }
     if (e->inst_tex_frame != v->frame) {
-      const float *prev = e->inst_same ? e->inst[0] : e->inst[1];
+      const float *prev = e->inst_live ? t3_attribute_f32(((const t3_instanced_mesh *)o)->instance_matrix) : e->inst_same ? e->inst[0] : e->inst[1];
       size_t bytes = (size_t)e->inst_n * 16 * sizeof(float);
       if (memcmp(e->inst_tex->pixels, prev, bytes) != 0) {
         memcpy(e->inst_tex->pixels, prev, bytes);
@@ -354,7 +380,7 @@ static void obj_textures_gl(vel_state *v, vel_obj *e, const t3_object *o) {
       e->inst_up_n = 0;
     }
     if (e->inst_tex_frame != v->frame) {
-      const float *prev = e->inst_same ? e->inst[0] : e->inst[1];
+      const float *prev = e->inst_live ? t3_attribute_f32(((const t3_instanced_mesh *)o)->instance_matrix) : e->inst_same ? e->inst[0] : e->inst[1];
       size_t bytes = (size_t)e->inst_n * 16 * sizeof(float);
       if (e->inst_up_n != e->inst_n || memcmp(e->inst_up, prev, bytes) != 0) {
         /* (whole rows, one upload: the staging copy is the texture's size, the texels past the last instance unread) */
@@ -448,12 +474,16 @@ int cw__velocity_objects(cw_pass_ctx *ctx, const cw_rt *vel) {
   }
   bool legacy = test_on("CW_TEST_VELOCITY_LEGACY");
   bool gl = cw_gpu_backend() != CW_GPU_WEBGPU;
+  /* GL: the moved meshes alone (t3_renderer_render_objects), not a render of the whole scene with the rest hidden
+   * (its scene walk, lights and shadow step for a few draws); CW_TEST_VELOCITY_SCENE_RENDER=1 (a control) draws the
+   * whole-scene way */
+  bool objs = gl && !legacy && !test_on("CW_TEST_VELOCITY_SCENE_RENDER");
   v->frame = ctx->frame + 1;
   v->view_proj = ctx->view_proj;
   v->prev_view_proj = ctx->prev_view_proj;
   draw_list draws = { 0 };
   hide_list hidden = { 0 };
-  walk(v, &ctx->scene3d->base, &draws, &hidden);
+  walk(v, &ctx->scene3d->base, &draws, objs ? NULL : &hidden);
   v->tracked = cw_map_size(&v->objs);
   if (draws.count) {
     if (!v->mat) {
@@ -530,7 +560,13 @@ int cw__velocity_objects(cw_pass_ctx *ctx, const cw_rt *vel) {
         t3_renderer_set_scissor(r, 0, bh - vel->h, vel->w, vel->h);
         t3_renderer_set_scissor_test(r, true);
         t3_renderer_set_auto_clear(r, false);
-        t3_renderer_render(r, sc, ctx->camera);
+        if (objs) {
+          t3_object **list = cw_alloc(sizeof *list * (size_t)draws.count, CW_MEM_RENDER);
+          for (int i = 0; i < draws.count; i++) list[i] = &draws.data[i].m->base;
+          t3_renderer_render_objects(r, sc, ctx->camera, list, draws.count);
+          cw_free(list);
+        } else
+          t3_renderer_render(r, sc, ctx->camera);
         t3_renderer_set_auto_clear(r, auto_clear);
         t3_renderer_set_viewport(r, vx, vy, vw, vh);
         t3_renderer_set_scissor(r, sx, sy, sw, sh);
