@@ -68,6 +68,10 @@ struct cw__psys {
   /* state textures (sort, trails, gpu stats) */
   int tw, trows;
   GLuint state_tex[2], state_fbo;
+  /* GL without transform feedback (the default): the state is two pairs of RGBA32F textures, ping-ponged by cur,
+   * each step a fragment-shader pass from one pair into the other; state_tex / state_fbo name the current pair */
+  bool fs;
+  GLuint fs_tex[2][2], fs_fbo[2];
   /* sort */
   int sort_n, sw, sh;
   GLuint key_tex[3], key_fbo[3]; /* the keys, ping-pong; [2] the ranks (a small sort) */

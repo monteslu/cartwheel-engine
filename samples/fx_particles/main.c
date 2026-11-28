@@ -13,7 +13,7 @@
  *
  * Debug state: fx.<name>.alive (CPU emission function, exact), .gpu_alive
  * and .gpu_sum (read back from the GPU: compared with a tolerance),
- * fx.systems / fx.alive / fx.draws / fx.sort_passes / fx.steps, fx.tick. */
+ * fx.systems / fx.alive / fx.draws / fx.sort_passes / fx.steps / fx.feedback (GL transform feedback sessions), fx.tick. */
 #include <stdio.h>
 
 #include "cartwheel/debug.h"
@@ -25,7 +25,7 @@ static const char *const names[] = { "Fountain", "Sparks", "Smoke", "Debris", "S
 #define NSYS 6
 static int32_t alive[NSYS], gpu_alive[NSYS];
 static float gpu_sum[NSYS][3];
-static int32_t tot_systems, tot_alive, tot_draws, tot_sort, tot_steps;
+static int32_t tot_systems, tot_alive, tot_draws, tot_sort, tot_steps, tot_feedback;
 static uint32_t tick;
 
 static cw_node node(const char *path) { return cw_node_get(cw_tree_root(cw_scene_app_tree()), path); }
@@ -46,6 +46,7 @@ static void init(void *u) {
   cw_debug_i32("fx.draws", &tot_draws);
   cw_debug_i32("fx.sort_passes", &tot_sort);
   cw_debug_i32("fx.steps", &tot_steps);
+  cw_debug_i32("fx.feedback", &tot_feedback);
   cw_debug_u32("fx.tick", &tick);
 }
 
@@ -78,6 +79,7 @@ static void render(void *u, double alpha) {
   tot_alive = st.alive;
   tot_draws = st.draw_calls;
   tot_sort = st.sort_passes;
+  tot_feedback = st.sim_feedback;
   tot_steps = st.sim_steps;
 }
 

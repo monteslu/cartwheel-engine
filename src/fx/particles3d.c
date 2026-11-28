@@ -1,4 +1,4 @@
-/* GPUParticles3D: transform feedback simulation, instanced drawing, GPU
+/* GPUParticles3D: the simulation in a fragment pass over float state textures (GL; transform feedback as a control), instanced drawing, GPU
  * bitonic sort, trails from a history ring, GPU stats readback.
  * ParticleAttractor3D and ParticleCollider3D. See cartwheel/particles.h. */
 #include <math.h>
@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "cartwheel/debug.h"
 #include "cartwheel/jobs.h"
 #include "particles3d_internal.h"
 #include "render/pipeline_internal.h"
@@ -119,10 +120,21 @@ static const char *const glsl_common =
     "float plife(int i, int k) { uint s = pseed(i, k); return u_lifetime * (1.0 - u_life_rand * prnd(s)); }\n";
 
 static const char *const sim_vs =
+    "#ifdef SIM_FS\n"
+    /* one fragment a particle, texel (i % u_stw, i / u_stw) of the state textures; textures sampled at level 0, as a
+     * vertex shader samples them */
+    "uniform highp sampler2D u_s0, u_s1;\n"
+    "uniform int u_stw;\n"
+    "layout(location = 0) out vec4 o_pa;\n"
+    "layout(location = 1) out vec4 o_vc;\n"
+    "#define SIM_TEX(s, c) textureLod(s, c, 0.0)\n"
+    "#else\n"
     "layout(location = 0) in vec4 a_pa;\n"
     "layout(location = 1) in vec4 a_vc;\n"
     "out vec4 o_pa;\n"
     "out vec4 o_vc;\n"
+    "#define SIM_TEX(s, c) texture(s, c)\n"
+    "#endif\n"
     "uniform float u_t0, u_t1, u_emit_end, u_explosive;\n"
     "uniform mat4 u_em0, u_em1;\n"
     "uniform int u_shape;\n"
@@ -196,7 +208,7 @@ static const char *const sim_vs =
     "    if (l < A.w && l > 1e-4) a += d / l * (B.x * pow(1.0 - l / A.w, B.y));\n"
     "  }\n"
     "  if (u_turb.x != 0.0)\n"
-    "    a += (texture(u_noise, p * u_turb.y + vec3(0.0, t * u_turb.z, 0.0)).xyz * 2.0 - 1.0) * u_turb.x;\n"
+    "    a += (SIM_TEX(u_noise, p * u_turb.y + vec3(0.0, t * u_turb.z, 0.0)).xyz * 2.0 - 1.0) * u_turb.x;\n"
     "  return a;\n"
     "}\n"
     "void respond(inout vec3 v, vec3 n) {\n"
@@ -241,7 +253,7 @@ static const char *const sim_vs =
     "  vec4 w = u_ivp * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);\n"
     "  return w.xyz / w.w;\n"
     "}\n"
-    "float dsamp(vec2 uv) { return texture(u_depth, u_dview.xy + uv * u_dview.zw).r; }\n"
+    "float dsamp(vec2 uv) { return SIM_TEX(u_depth, u_dview.xy + uv * u_dview.zw).r; }\n"
     "void depth_collide(inout vec3 p, inout vec3 v) {\n"
     "  vec4 c = u_vp * vec4(p, 1.0);\n"
     "  if (c.w <= 0.0) return;\n"
@@ -268,7 +280,14 @@ static const char *const sim_vs =
     "  respond(v, n);\n"
     "}\n"
     "void main() {\n"
+    "#ifdef SIM_FS\n"
+    "  ivec2 sc = ivec2(gl_FragCoord.xy);\n"
+    "  int i = sc.y * u_stw + sc.x;\n"
+    "  if (i >= u_amount) { o_pa = vec4(0.0, 0.0, 0.0, -1.0); o_vc = vec4(0.0, 0.0, 0.0, -1.0); return; }\n"
+    "  vec4 a_pa = texelFetch(u_s0, sc, 0), a_vc = texelFetch(u_s1, sc, 0);\n"
+    "#else\n"
     "  int i = gl_VertexID;\n"
+    "#endif\n"
     "  float L = u_lifetime;\n"
     "  vec4 pa = a_pa, vc = a_vc;\n"
     "  g_dir = u_dir;\n"
@@ -326,6 +345,12 @@ static const char *const sim_vs =
     "}\n";
 
 static const char *const sim_fs = "out vec4 o;\nvoid main() { o = vec4(0.0); }\n";
+/* the fragment-shader simulation's one triangle over the state texture */
+static const char *const sim_tri_vs =
+    "void main() {\n"
+    "  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));\n"
+    "  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);\n"
+    "}\n";
 
 /* drawing: billboards / stretched quads / meshes, from attributes or (sorted)
  * from the state textures through the order texture */
@@ -335,7 +360,7 @@ static const char *const draw_vs =
     "layout(location = 1) in vec4 a_vc;\n"
     "#else\n"
     "uniform sampler2D u_state0, u_state1, u_order;\n"
-    "uniform int u_tw, u_ow;\n"
+    "uniform int u_tw, u_ow, u_ordered;\n"
     "#endif\n"
     "layout(location = 2) in vec3 a_vert;\n"
     "layout(location = 3) in vec3 a_norm;\n"
@@ -366,7 +391,7 @@ static const char *const draw_vs =
     "  int i; vec4 pa, vc;\n"
     "#ifdef SRC_TEX\n"
     "  int n = gl_InstanceID;\n"
-    "  i = int(texelFetch(u_order, ivec2(n % u_ow, n / u_ow), 0).y);\n"
+    "  i = u_ordered == 1 ? int(texelFetch(u_order, ivec2(n % u_ow, n / u_ow), 0).y) : n;\n"
     "  if (i < 0 || i >= u_amount) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); v_color = vec4(0.0); return; }\n"
     "  pa = texelFetch(u_state0, ivec2(i % u_tw, i / u_tw), 0);\n"
     "  vc = texelFetch(u_state1, ivec2(i % u_tw, i / u_tw), 0);\n"
@@ -492,14 +517,21 @@ static const char *const draw_fs =
 /* writes particle state (or a history slot) into float textures, one point
  * per particle */
 static const char *const scatter_vs =
+    "#ifdef STATE_TEX\n"
+    "uniform highp sampler2D u_s0, u_s1;\n"
+    "#else\n"
     "layout(location = 0) in vec4 a_pa;\n"
     "layout(location = 1) in vec4 a_vc;\n"
+    "#endif\n"
     "uniform int u_tw, u_row0;\n"
     "uniform vec2 u_size;\n"
     "flat out vec4 v_a;\n"
     "flat out vec4 v_b;\n"
     "void main() {\n"
     "  int i = gl_VertexID;\n"
+    "#ifdef STATE_TEX\n"
+    "  vec4 a_pa = texelFetch(u_s0, ivec2(i % u_tw, i / u_tw), 0), a_vc = texelFetch(u_s1, ivec2(i % u_tw, i / u_tw), 0);\n"
+    "#endif\n"
     "  vec2 xy = vec2(float(i % u_tw), float(u_row0 + i / u_tw)) + 0.5;\n"
     "  gl_Position = vec4(xy / u_size * 2.0 - 1.0, 0.0, 1.0);\n"
     "  gl_PointSize = 1.0;\n"
@@ -675,7 +707,7 @@ static const char *const trail_fs =
 
 /* ── programs ───────────────────────────────────────────────────────── */
 
-static GLuint prog_sim, prog_draw[2], prog_scatter, prog_hist, prog_key, prog_bitonic, prog_rank, prog_rank_select, prog_reduce, prog_trail;
+static GLuint prog_sim, prog_sim_fs, prog_hist_tex, prog_draw[2], prog_scatter, prog_hist, prog_key, prog_bitonic, prog_rank, prog_rank_select, prog_reduce, prog_trail;
 static bool progs_failed;
 
 static char *cat3(const char *a, const char *b, const char *c) {
@@ -692,6 +724,14 @@ static bool build_programs(void) {
   char *vs = cat3(glsl_common, sim_vs, "");
   prog_sim = cw__fx_program("particles.sim", vs, sim_fs, vary, 2);
   cw_free(vs);
+  char *sfs = cat3("#define SIM_FS 1\n", glsl_common, sim_vs);
+  prog_sim_fs = cw__fx_program("particles.sim_fs", sim_tri_vs, sfs, NULL, 0);
+  cw_free(sfs);
+  char *htvs = cat3("#define STATE_TEX 1\n", scatter_vs, "");
+  char *htfs = cat3("#define HIST 1\n", scatter_fs, "");
+  prog_hist_tex = cw__fx_program("particles.history_tex", htvs, htfs, NULL, 0);
+  cw_free(htvs);
+  cw_free(htfs);
   for (int v = 0; v < 2; v++) {
     char *dvs = cat3(v ? "#define SRC_TEX 1\n" : "", glsl_common, draw_vs);
     char *dfs = cat3(glsl_common, CW__FFOG_GLSL, draw_fs);
@@ -713,7 +753,7 @@ static bool build_programs(void) {
   prog_trail = cw__fx_program("particles.trail", tvs, tfs, NULL, 0);
   cw_free(tvs);
   cw_free(tfs);
-  if (!prog_sim || !prog_draw[0] || !prog_draw[1] || !prog_scatter || !prog_hist || !prog_key || !prog_bitonic || !prog_rank || !prog_rank_select ||
+  if (!prog_sim || !prog_sim_fs || !prog_hist_tex || !prog_draw[0] || !prog_draw[1] || !prog_scatter || !prog_hist || !prog_key || !prog_bitonic || !prog_rank || !prog_rank_select ||
       !prog_reduce || !prog_trail) {
     progs_failed = true;
     prog_sim = 0;
@@ -735,12 +775,17 @@ static void free_fbo(GLuint *f) {
 }
 
 static void free_state(cw__psys *r) {
+  if (r->fs) r->state_tex[0] = r->state_tex[1] = r->state_fbo = 0;   /* (the current pair: freed with the pairs) */
   for (int i = 0; i < 2; i++) free_tex(&r->state_tex[i]);
   for (int i = 0; i < 3; i++) {
     free_tex(&r->key_tex[i]);
     free_fbo(&r->key_fbo[i]);
   }
   free_fbo(&r->state_fbo);
+  for (int p = 0; p < 2; p++) {
+    for (int i = 0; i < 2; i++) free_tex(&r->fs_tex[p][i]);
+    free_fbo(&r->fs_fbo[p]);
+  }
   free_tex(&r->hist_tex);
   free_fbo(&r->hist_fbo);
   for (int i = 0; i < 4; i++) {
@@ -748,6 +793,49 @@ static void free_state(cw__psys *r) {
     free_fbo(&r->red_fbo[i]);
   }
   r->tw = r->trows = r->sort_n = r->hist_len = r->red_levels = 0;
+  r->fs = false;
+}
+
+/* CW_TEST_PSYS_TF=1 (a control): the simulation by transform feedback into vertex buffers, as before 0.88 */
+static bool psys_tf(void) {
+  const char *e = cw_test_env("CW_TEST_PSYS_TF");
+  return e && *e == '1';
+}
+/* the current state pair as the state textures the sort, trails and stats read */
+static void fs_alias(cw__psys *r) {
+  r->state_tex[0] = r->fs_tex[r->cur][0];
+  r->state_tex[1] = r->fs_tex[r->cur][1];
+  r->state_fbo = r->fs_fbo[r->cur];
+}
+/* the fragment-shader state: two pairs of textures, every texel dead */
+static bool fs_make(cw__psys *r) {
+  if (psys_tf() || !cw__fx_float32_ok()) return false;
+  r->tw = CW_MIN(r->cap, 1024);
+  r->trows = (r->cap + r->tw - 1) / r->tw;
+  for (int p = 0; p < 2; p++) {
+    for (int i = 0; i < 2; i++) r->fs_tex[p][i] = cw__fx_tex2d(r->tw, r->trows, GL_RGBA32F, GL_RGBA, GL_FLOAT, false, NULL);
+    r->fs_fbo[p] = cw__fx_fbo(r->fs_tex[p][0], r->fs_tex[p][1], 0);
+    if (!r->fs_fbo[p]) {
+      for (int q = 0; q < 2; q++) {
+        for (int i = 0; i < 2; i++) free_tex(&r->fs_tex[q][i]);
+        free_fbo(&r->fs_fbo[q]);
+      }
+      r->tw = r->trows = 0;
+      return false;
+    }
+  }
+  r->fs = true;
+  return true;
+}
+static void fs_dead(cw__psys *r) {
+  static const float dead[4] = { 0, 0, 0, -1 };
+  for (int p = 0; p < 2; p++) {
+    glBindFramebuffer(GL_FRAMEBUFFER, r->fs_fbo[p]);
+    glClearBufferfv(GL_COLOR, 0, dead);
+    glClearBufferfv(GL_COLOR, 1, dead);
+  }
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  fs_alias(r);
 }
 
 static void free_gl(cw__psys *r) {
@@ -789,6 +877,7 @@ static void upload_dead(cw__psys *r) {
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   cw_free(a);
   cw_free(b);
+  if (r->fs) fs_dead(r);
   r->hist_count = 0;
   r->hist_head = 0;
 }
@@ -804,6 +893,7 @@ static void ensure_gl(cw__psys *r, int amount) {
   r->draw_key[0] = r->draw_key[1] = 0;
   r->gl_ready = true;
   r->mesh_built_kind = -1;
+  fs_make(r);
   upload_dead(r);
   for (int p = 0; p < 2; p++) {
     glBindVertexArray(r->sim_vao[p]);
@@ -1022,6 +1112,7 @@ void cw__psys_ensure_mesh(cw_node self, p3d *d, cw__psys *r) {
 
 /* state textures: tw x trows, two RGBA32F targets */
 static bool ensure_state(cw__psys *r) {
+  if (r->fs) return true;   /* (the state is in textures already) */
   if (r->state_fbo) return true;
   if (!cw__fx_float32_ok()) return false;
   r->tw = CW_MIN(r->cap, 1024);
@@ -1169,7 +1260,7 @@ int cw__psys_colliders(const cw__fx_tree *ft, float cinv[MAX_COLL * 16], float c
 static bool scatter_state(p3d *d, cw__psys *r);
 static void run_steps(cw_node n, p3d *d, cw__psys *r, cw_pass_ctx *ctx, cw__fx_tree *ft) {
   if (r->nsteps == 0) return;
-  GLuint p = prog_sim;
+  GLuint p = r->fs ? prog_sim_fs : prog_sim;
   glUseProgram(p);
   common_uniforms(p, d);
   cw__fx_u1f(p, "u_explosive", CW_CLAMP(d->explosiveness, 0, 1));
@@ -1221,6 +1312,7 @@ static void run_steps(cw_node n, p3d *d, cw__psys *r, cw_pass_ctx *ctx, cw__fx_t
   cw__fx_u1f(p, "u_inherit", d->inherit_velocity);
   cw__fx_u1i(p, "u_ptw", 1);
   cw__fx_u1i(p, "u_pn", 0);
+  bool par = false;   /* (units 3 and 4 hold the parent's state) */
   if (d->emission_shape == SHAPE_PARENT) {
     cw_node pn = cw__psys_ref_node(n, d->parent);
     p3d *pd = cw_node_valid(pn) ? cw__psys_data(pn) : NULL;
@@ -1231,6 +1323,7 @@ static void run_steps(cw_node n, p3d *d, cw__psys *r, cw_pass_ctx *ctx, cw__fx_t
       cw__fx_u1i(p, "u_pn", pd->amount);
       cw__fx_bind_tex(3, GL_TEXTURE_2D, pd->rt->state_tex[0]);
       cw__fx_bind_tex(4, GL_TEXTURE_2D, pd->rt->state_tex[1]);
+      par = true;
       /* off the parent's state framebuffer: the sim samples those textures, and with them still attached WebGL
        * (romdev's GL host) refuses the draw as a feedback loop, rasterizer discard or not */
       glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -1250,6 +1343,60 @@ static void run_steps(cw_node n, p3d *d, cw__psys *r, cw_pass_ctx *ctx, cw__fx_t
   }
 
   bool hist = d->trail_length >= 2 && ensure_hist(r, CW_MIN(d->trail_length, TRAIL_MAX));
+  if (r->fs) {
+    /* each step one triangle over the state: the last pair in, the other out (no transform feedback: a
+     * transform feedback session a system a step cost the GPU a flush each, and appending several systems into one
+     * session is not reliable on every driver) */
+    cw__pass_state_reset();
+    if (!par) { /* (no draw's state texture left on the parent units: it may be the pair this step writes) */
+      cw__fx_bind_tex(3, GL_TEXTURE_2D, 0);
+      cw__fx_bind_tex(4, GL_TEXTURE_2D, 0);
+    }
+    glUseProgram(p);
+    cw__fx_u1i(p, "u_s0", 5);
+    cw__fx_u1i(p, "u_s1", 6);
+    cw__fx_u1i(p, "u_stw", r->tw);
+    glBindVertexArray(cw__fx_empty_vao());
+    for (int s = 0; s < r->nsteps; s++) {
+      const step_rec *st = &r->steps[s];
+      glUseProgram(p);
+      cw__fx_u1f(p, "u_t0", st->t0);
+      cw__fx_u1f(p, "u_t1", st->t1);
+      cw__fx_mat4(p, "u_em0", st->m0.e);
+      cw__fx_mat4(p, "u_em1", st->m1.e);
+      int nxt = 1 - r->cur;
+      glBindFramebuffer(GL_FRAMEBUFFER, r->fs_fbo[nxt]);
+      glViewport(0, 0, r->tw, r->trows);
+      cw__fx_bind_tex(5, GL_TEXTURE_2D, r->fs_tex[r->cur][0]);
+      cw__fx_bind_tex(6, GL_TEXTURE_2D, r->fs_tex[r->cur][1]);
+      glDrawArrays(GL_TRIANGLES, 0, 3);
+      r->cur = nxt;
+      fs_alias(r);
+      ft->stats.sim_steps++;
+      if (hist) {
+        r->hist_head = (r->hist_head + 1) % r->hist_len;
+        r->hist_count = CW_MIN(r->hist_count + 1, r->hist_len);
+        glBindFramebuffer(GL_FRAMEBUFFER, r->hist_fbo);
+        glViewport(0, 0, r->tw, r->trows * r->hist_len);
+        glUseProgram(prog_hist_tex);
+        cw__fx_u1i(prog_hist_tex, "u_s0", 5);
+        cw__fx_u1i(prog_hist_tex, "u_s1", 6);
+        cw__fx_u1i(prog_hist_tex, "u_tw", r->tw);
+        cw__fx_u1i(prog_hist_tex, "u_row0", r->hist_head * r->trows);
+        cw__fx_u2f(prog_hist_tex, "u_size", (float)r->tw, (float)(r->trows * r->hist_len));
+        cw__fx_bind_tex(5, GL_TEXTURE_2D, r->fs_tex[r->cur][0]);
+        cw__fx_bind_tex(6, GL_TEXTURE_2D, r->fs_tex[r->cur][1]);
+        glDrawArrays(GL_POINTS, 0, d->amount);
+      }
+    }
+    /* (off the state textures: the draws sample them) */
+    cw__fx_bind_tex(5, GL_TEXTURE_2D, 0);
+    cw__fx_bind_tex(6, GL_TEXTURE_2D, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindVertexArray(0);
+    r->nsteps = 0;
+    return;
+  }
   glEnable(GL_RASTERIZER_DISCARD); /* after ensure_hist: it clears, and discard drops clears too */
   for (int s = 0; s < r->nsteps; s++) {
     const step_rec *st = &r->steps[s];
@@ -1263,6 +1410,7 @@ static void run_steps(cw_node n, p3d *d, cw__psys *r, cw_pass_ctx *ctx, cw__fx_t
     glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, 0, r->buf[nxt][0]);
     glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, 1, r->buf[nxt][1]);
     glBeginTransformFeedback(GL_POINTS);
+    ft->stats.sim_feedback++;
     glDrawArrays(GL_POINTS, 0, d->amount);
     glEndTransformFeedback();
     glBindBufferBase(GL_TRANSFORM_FEEDBACK_BUFFER, 0, 0);
@@ -1292,6 +1440,7 @@ static void run_steps(cw_node n, p3d *d, cw__psys *r, cw_pass_ctx *ctx, cw__fx_t
 
 /* current state into the state textures (MRT points) */
 static bool scatter_state(p3d *d, cw__psys *r) {
+  if (r->fs) return true;   /* (the simulation writes the state textures) */
   if (!ensure_state(r)) return false;
   glBindFramebuffer(GL_FRAMEBUFFER, r->state_fbo);
   glViewport(0, 0, r->tw, r->trows);
@@ -1565,6 +1714,15 @@ static void psys_prepare(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft, psys_prep
   }
   if (!build_programs()) return;
   ensure_gl(r, d->amount);
+  {
+    /* (the control is read once the test env is there: not on the first frame, when the state was made) */
+    bool want_fs = !psys_tf() && cw__fx_float32_ok();
+    if (want_fs != r->fs) {
+      free_state(r);
+      if (want_fs) fs_make(r);
+      upload_dead(r);
+    }
+  }
   if (r->need_reset) {
     upload_dead(r);
     r->need_reset = false;
@@ -1657,7 +1815,8 @@ static void psys_draw(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft, const psys_p
     set_blend(d->blend);
   }
 
-  GLuint dp = prog_draw[sorted ? 1 : 0];
+  bool tex_src = sorted || r->fs;   /* the state from textures (sorted: through the order) */
+  GLuint dp = prog_draw[tex_src ? 1 : 0];
   glUseProgram(dp);
   common_uniforms(dp, d);
   cw__fx_mat4(dp, "u_view", ctx->view.e);
@@ -1702,15 +1861,16 @@ static void psys_draw(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft, const psys_p
   cw__fx_u4f(dp, "u_soft", ctx->depth_tex ? d->soft_distance : 0, lp[0], lp[1], lp[2]);
   cw__fx_u2f(dp, "u_inv_size", 1.0f / (float)(dist ? dist->w : ctx->width), 1.0f / (float)(dist ? dist->h : ctx->height));
   cw__fx_u1f(dp, "u_camfade", d->camera_fade);
-  if (sorted) {
+  if (tex_src) {
     cw__fx_bind_tex(3, GL_TEXTURE_2D, r->state_tex[0]);
     cw__fx_bind_tex(4, GL_TEXTURE_2D, r->state_tex[1]);
-    cw__fx_bind_tex(5, GL_TEXTURE_2D, r->key_tex[r->sorted]);
+    cw__fx_bind_tex(5, GL_TEXTURE_2D, sorted ? r->key_tex[r->sorted] : cw__fx_dot_texture());
     cw__fx_u1i(dp, "u_state0", 3);
     cw__fx_u1i(dp, "u_state1", 4);
     cw__fx_u1i(dp, "u_order", 5);
+    cw__fx_u1i(dp, "u_ordered", sorted ? 1 : 0);
     cw__fx_u1i(dp, "u_tw", r->tw);
-    cw__fx_u1i(dp, "u_ow", r->sw);
+    cw__fx_u1i(dp, "u_ow", sorted ? r->sw : 1);
   }
   bool mesh = d->draw_mode == DRAW_MESH;
   if (mesh) {
@@ -1719,13 +1879,13 @@ static void psys_draw(cw_node n, cw_pass_ctx *ctx, cw__fx_tree *ft, const psys_p
   }
   /* one VAO per state buffer, its attributes specified when the layout first appears (in a cart a
    * GL call is a crossing into the host: this was 9 to 13 calls a system a frame) */
-  uint64_t key = 1u | (sorted ? 2u : 0u) | (mesh ? 4u : 0u) | (uint64_t)(mesh ? r->mesh_vbo : cw__fx_quad_vbo()) << 8 |
+  uint64_t key = 1u | (tex_src ? 2u : 0u) | (mesh ? 4u : 0u) | (uint64_t)(mesh ? r->mesh_vbo : cw__fx_quad_vbo()) << 8 |
                  (uint64_t)(mesh ? r->mesh_ibo : 0) << 36;
   glBindVertexArray(r->draw_vaos[r->cur]);
   bool setup = r->draw_key[r->cur] != key;
   r->draw_key[r->cur] = key;
   if (setup) {
-    if (!sorted) bind_particle_attrs(r, r->cur, 1);
+    if (!tex_src) bind_particle_attrs(r, r->cur, 1);
     else {
       glDisableVertexAttribArray(0);
       glDisableVertexAttribArray(1);
@@ -2094,7 +2254,7 @@ static const cw_prop p3d_props[] = {
 
 static cw_node_type p3d_type = {
   .name = "GPUParticles3D", .parent = "Node3D", .data_size = sizeof(p3d), .props = p3d_props,
-  .doc = "GPU particles: transform feedback simulation, instanced billboards / meshes, trails (particles.h).",
+  .doc = "GPU particles: a GPU simulation (a fragment pass on GL, compute on WebGPU), instanced billboards / meshes, trails (particles.h).",
   .init = p3d_init, .destroy = p3d_destroy, .enter_tree = p3d_enter, .exit_tree = p3d_exit,
   .fixed_update = p3d_fixed, .prop_changed = p3d_changed,
 };

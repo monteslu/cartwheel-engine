@@ -1,12 +1,13 @@
-/* Particles and trails: GPU particles in 3D (transform feedback), CPU
+/* Particles and trails: GPU particles in 3D (a fragment pass or compute), CPU
  * particles in 2D (on the render2d batcher), ribbon trails.
  *
  * ── node types (properties: docs/nodes.json, the debug channel's `props`) ──
  *
- *   GPUParticles3D       (Node3D) `amount` particles simulated on the GPU by
- *                        transform feedback: per particle position, age,
- *                        velocity and its spawn cycle, ping-ponged between two
- *                        buffer pairs every fixed tick. Emission is a pure
+ *   GPUParticles3D       (Node3D) `amount` particles simulated on the GPU
+ *                        (GL: a fragment pass over two RGBA32F state textures,
+ *                        a texel a particle; WebGPU: a compute pass): per
+ *                        particle position, age, velocity and its spawn cycle,
+ *                        ping-ponged between two pairs every fixed tick. Emission is a pure
  *                        function of the particle index and sim time:
  *                        particle i spawns at
  *                          start + i / amount * lifetime * (1 - explosiveness)
@@ -102,11 +103,15 @@
  * the scene is HDR, so energy > 1 blooms). The pass reads CW_RES_DEPTH (soft
  * particles and depth collision sample ctx->depth_tex), so a tree with
  * particles renders offscreen. The simulation runs in the same pass, one
- * transform feedback draw per pending fixed tick (no draw happens while the
- * tree is paused). Costs: one TF draw per system per tick (amount vertices),
+ * draw per pending fixed tick (no draw happens while the tree is paused): on
+ * GL one triangle over the system's state texture (a fragment a particle,
+ * into the other texture pair; no transform feedback, whose per-system
+ * session costs a GPU flush on some drivers; CW_TEST_PSYS_TF=1 simulates by
+ * transform feedback, as before 0.88, for tests). Costs: one simulation draw
+ * per system per tick,
  * one instanced draw per system per frame (plus one for trails); sorting adds
  * log2(n)(log2(n)+1)/2 full-target passes over a 2^k texel key texture;
- * gpu_stats adds a scatter, a reduction and a 1-pixel readback (a stall).
+ * gpu_stats adds a reduction and a 1-pixel readback (a stall).
  * On WebGPU (cartwheel/gpu.h) the simulation, the sort and the gpu_stats
  * reduction are compute passes and the draws read the particle buffers
  * directly; gpu_alive / gpu_sum arrive asynchronously, never as a stall: a
@@ -151,10 +156,11 @@ typedef struct cw_particles_stats {
   int systems;        /* GPUParticles3D nodes in the tree */
   int alive;          /* sum of their `alive` */
   int capacity;       /* sum of their `amount` */
-  int sim_steps;      /* transform feedback steps run last frame */
+  int sim_steps;      /* simulation steps run last frame (GL: a fragment pass each; WebGPU: a compute dispatch each) */
   int draw_calls;     /* particle + trail draws last frame */
   int sort_passes;    /* bitonic passes last frame */
   int hidden;         /* of `systems`, hidden by themselves or an ancestor (cw_node_visible_in_tree): no simulation, no draw */
+  int sim_feedback;   /* GL: transform feedback sessions last frame (0 unless the CW_TEST_PSYS_TF=1 control, or a GL without float targets) */
 } cw_particles_stats;
 /* last frame's counts; zeroed when the tree has no particles or t is NULL */
 void cw_particles_get_stats(cw_tree *t, cw_particles_stats *out);
