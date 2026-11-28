@@ -15,6 +15,10 @@
 //   P3 contact jump the shin's middle (from its two edges) 3 to 5 cm under the line against 3 to 5 cm above: under 0.5 cm
 //                   (3 cm out: on a wave's flank the line crosses the 12 cm shin on a slant, up to 2 cm higher at one edge)
 // The hull (2.8 x 1.1 m, drawing 0.25 m) is read for P1 down its side at the crest.
+// Foam must not hide the contact: with every foam and lace layer on (CW_TEST_WC_FOAM: crest foam 1, lace, soft foam, a
+// slow wake at the shin each tick) P1 and P3 hold at every phase, and foam covers at most 10 % of the contact band (the
+// shin's middle half, from the line to 10 cm under it: a pixel is covered when its weakest channel is 30 levels over the
+// same pixel without the foam; bloom off in both, which would veil the frame around a bright foam field).
 // Phases: crest, trough, rising and falling at the shin (CW_TEST_WC_PHASE), the swell's clock set for frame 90.
 // CONTROLS, each of which must fail or the gate could not see it:
 //   (a) CW_TEST_WATER_CONTACT=old + CW_TEST_WATER_REST_CLIP=1, the water before v0.87, at the crest: P1 or P2
@@ -22,6 +26,7 @@
 //   (c) CW_TEST_WATER_CONTACT=offset, the refraction's offset whatever the depth, at the falling phase: P3
 //   (d) CW_TEST_WC_NONE=1, no shin: the gate must find no object, not a pass
 //   (e) the clear water's see_through on the harbour's clarity: the harbour's P2 range
+//   (f) the foam with CW_TEST_WATER_CONTACT=old (foam laid over what shows through), at the crest: the 10 % foam bound
 //
 //   node tests/water-contact.mjs [--gpus gl,webgpu] [--measure-only]   (--measure-only: measure the pictures the last run left)
 import { spawnSync } from 'node:child_process';
@@ -85,6 +90,17 @@ function edges(im, y, cx, half) {
 }
 
 /* the measurements on one pair (with the water, and dry) */
+/* the share of the contact band (the shin's middle half, from the line to 10 cm under it) the foam whitens */
+function foamCover(foamy, plain) {
+  const g = geo(VIEWS.steep), half = Math.round((0.12 * g.pxm) / 4);
+  let n = 0, c = 0;
+  for (let y = MID + 1; y <= MID + Math.round(10 * g.pxcmV); y++) for (let x = W / 2 - half; x <= W / 2 + half; x++) {
+    const o = (y * W + x) * 4, a = Math.min(foamy.rgba[o], foamy.rgba[o + 1], foamy.rgba[o + 2]), b = Math.min(plain.rgba[o], plain.rgba[o + 1], plain.rgba[o + 2]);
+    n++; if (a - b > 30) c++;
+  }
+  return c / n;
+}
+
 function measure(wet, dry, view, shinWidth) {
   const g = geo(VIEWS[view]), cx = W / 2;
   // the object in the dry picture, 3 cm over the line: its width
@@ -138,6 +154,15 @@ for (const gpu of GPUS) {
     else ok(m.p2 >= WATERS.coastal.range[0] * 0.4, `${tag} ${phase}: P2 fade ${f1(m.p2)} cm at least ${WATERS.coastal.range[0] * 0.4} cm (crest light)`);
     ok(P3OK(m), `${tag} ${phase}: P3 contact jump ${f2(m.p3)} cm < 0.5`);
   }
+  const FOAM = { CW_TEST_WC_FOAM: '1' }, pct = (v) => `${(100 * v).toFixed(1)} %`;
+  for (const phase of ['crest', 'trough', 'rise', 'fall']) {
+    // (bloom off in both: a bright foam field's glow veils the frame around it, and this asks what the foam itself covers)
+    const NB = ['set Root/Post bloom false'];
+    const plain = shot(gpu, `${phase}-nobloom`, { phase, cmds: NB }), foamy = shot(gpu, `${phase}-foam`, { phase, env: FOAM, cmds: NB });
+    const m = measure(foamy, dry[phase], 'steep', 0.12), cov = foamCover(foamy, plain);
+    console.log(`${tag} ${phase} with every foam layer: P1 ${f2(m.p1)}, P3 ${f2(m.p3)} cm, foam over the contact ${pct(cov)}`);
+    ok(m.found && P1OK(m) && P3OK(m) && cov <= 0.1, `${tag} ${phase} with every foam layer: P1 ${f2(m.p1)} in 0.75..1.1, P3 ${f2(m.p3)} cm < 0.5, foam over the contact ${pct(cov)} <= 10 %`);
+  }
   for (const water of ['harbour', 'atoll']) {
     const m = measure(shot(gpu, `trough-${water}`, { phase: 'trough', water }), dry.trough, 'steep', 0.12);
     console.log(`${tag} trough ${water}: P1 ${f2(m.p1)}, P2 ${f1(m.p2)} cm`);
@@ -166,6 +191,10 @@ for (const gpu of GPUS) {
   const d = measure(shot(gpu, 'ctl-none', { env: { CW_TEST_WC_NONE: '1' } }), shot(gpu, 'ctl-none', { env: { CW_TEST_WC_NONE: '1' }, dry: true }), 'steep', 0.12);
   mustFail(!d.found, `${tag} (d) no shin: found ${d.found} (width ${f2(d.widthM)} m)`);
   const e = measure(shot(gpu, 'ctl-clear-harbour', { phase: 'trough', water: 'harbourClear' }), dry.trough, 'steep', 0.12);
+  const NB0 = ['set Root/Post bloom false'];
+  const fo = shot(gpu, 'ctl-foam-old', { env: { ...FOAM, CW_TEST_WATER_CONTACT: 'old' }, cmds: NB0 }), po = shot(gpu, 'ctl-old-plain', { env: { CW_TEST_WATER_CONTACT: 'old' }, cmds: NB0 });
+  const fc = foamCover(fo, po);
+  mustFail(fc > 0.1, `${tag} (f) foam laid over what shows through (CW_TEST_WATER_CONTACT=old), crest: foam over the contact ${pct(fc)}`);
   mustFail(e.found && !P2OK(e, 'harbourClear'), `${tag} (e) clear water's see_through on the harbour: P2 ${f1(e.p2)} cm against 5..25`);
 }
 console.log(`${runs} runs`);

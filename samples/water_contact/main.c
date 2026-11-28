@@ -9,6 +9,9 @@
  *                     first minute of the clock)
  *   CW_TEST_WC_VIEW   steep (default) | graze (4 m out, 0.6 m up) | hull (the hull's side, 4.5 m out, 1.5 m up)
  *   CW_TEST_WC_NONE   1: the shin and the hull left out (the gate must then find no object)
+ *   CW_TEST_WC_FOAM   1: every foam and lace layer on, as a racing game's sea has them (crest foam 1, lace 0.3, soft
+ *                     foam, the foam pattern 7), and a slow wake at the shin each tick (0.5 m/s): foam must not
+ *                     hide the contact
  * Debug state: wc.tick, wc.h (the surface at the shin's near side, over the rest level, m), wc.hh (at the hull's near side). */
 #include <math.h>
 #include <stdlib.h>
@@ -21,7 +24,7 @@
 #define T_SHOT 90
 static uint32_t tick;
 static float h_shin, h_hull;
-static int view;
+static int view, foam;
 
 static cw_node node(const char *path) { return cw_node_get(cw_tree_root(cw_scene_app_tree()), path); }
 
@@ -56,6 +59,14 @@ static void switches(void) {
   if (ph && *ph) cw_node_set(w, "time_offset", cw_val_float((float)(phase_time(w, ph) - T_SHOT * cw_fixed_dt())));
   const char *v = cw_test_env("CW_TEST_WC_VIEW");
   view = v && !strcmp(v, "graze") ? 1 : v && !strcmp(v, "hull") ? 2 : 0;
+  const char *fm = cw_test_env("CW_TEST_WC_FOAM");
+  foam = fm && atoi(fm) > 0;
+  if (foam) {
+    cw_node_set(w, "crest_foam", cw_val_float(1));
+    cw_node_set(w, "foam_lace", cw_val_float(0.3f));
+    cw_node_set(w, "foam_soft", cw_val_float(1));
+    cw_node_set(w, "foam_scale", cw_val_float(7));
+  }
   const char *none = cw_test_env("CW_TEST_WC_NONE");
   if (none && atoi(none) > 0) {
     cw_node_set(node("Root/Shin"), "visible", cw_val_bool(false));
@@ -68,6 +79,7 @@ static void update(void *u, double dt) {
   (void)dt;
   tick++;
   if (tick == 2) switches();
+  if (foam) cw_water_wake(node("Root/Water"), 0, 0, 0.5f, 0, 0.3f, 0.02f, 0.6f);
 }
 
 /* (in render, at the drawn surface's own time: the tick before plus alpha, as the water draws it) */

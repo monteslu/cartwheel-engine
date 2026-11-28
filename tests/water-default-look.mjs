@@ -7,7 +7,7 @@
 // submerged crate through its surface (Water3D see_through): that moved the 1.5% of these pixels where the crates stand
 // at the waterline, and nothing else. Drawn again at v0.87.0 on the test GPU (GL) because v0.87.0 joins what is under the
 // surface to what is above it at the line (the refraction clipped at the waves' height, its offset grown with the water
-// over a point, the two-way fade): that moved 0.24% of these pixels, at the boat's and the crates' waterlines and the
+// over a point, the two-way fade): that moved a fraction of a per cent of these pixels, at the boat's and the crates' waterlines and the
 // submerged crate, and nothing else. This run must match it on GL and on WebGPU, on the test GPU and on a software
 // renderer: those differ from each other by under 0.05% of these pixels over 16 levels. Reading the floor map and the
 // ripple grid at a surface point's rest position (the fault in v0.26.0 to v0.28.4) moves 3.8% of them.

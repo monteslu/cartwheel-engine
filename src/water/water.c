@@ -882,15 +882,14 @@ static void render_into(cw_pass_ctx *ctx, water_tree *wt, t3_render_target *rt, 
   render_scene_into(ctx, wt, rt, cam, ctx->scene3d);
 }
 
-/* how far above the rest level the refraction is clipped, and below it the reflection: the live swell's summed
- * amplitude (d->sun[3], this frame's) plus 5 cm, and that amplitude capped at 0.5 m (more starts mirroring the floor of
- * the shallows). CW_TEST_WATER_REST_CLIP=1: both at the rest level, as before v0.87 (the gates' control) */
+/* how far above the rest level the refraction is clipped: the live swell's summed amplitude (d->sun[3], this frame's)
+ * plus 5 cm. CW_TEST_WATER_REST_CLIP=1: at the rest level, as before v0.87 (the gates' control). (The reflection stays
+ * clipped at the rest level: one plane under it mirrored what lies under a calm, sheltered surface too) */
 static bool water_rest_clip(void) {
   const char *e = cw_test_env("CW_TEST_WATER_REST_CLIP");
   return e && atoi(e) > 0;
 }
 static float water_refr_lift(const water3d *d) { return water_rest_clip() ? 0.0f : d->sun[3] + 0.05f; }
-static float water_refl_drop(const water3d *d) { return water_rest_clip() ? 0.0f : CW_MIN(d->sun[3], 0.5f); }
 
 /* the refraction: three.c's render target on GL; on WebGPU a target of the engine's own whose depth is copied for
  * the surface to read (refraction_wgpu.c). cam NULL: cleared, 1 x 1 */
@@ -978,11 +977,7 @@ static void planar(cw_pass_ctx *ctx, water_tree *wt, cw_node n, water3d *d) {
     t3_object_look_at(v, tgt.x, tgt.y, tgt.z);
     t3_object_update_matrix_world(v, true);
     v->projection_matrix = ctx->proj;
-    /* clipped a little under the rest level (the live swell's summed amplitude, at most 0.5 m): on a trough the part of
-     * a hull or a leg under the rest level is above the real surface, and its reflection must meet it there */
-    /* (no deeper than 0.3 m under the camera: the mirrored camera must stay under the plane, and well under it) */
-    float drop = CW_MAX(0.0f, CW_MIN(water_refl_drop(d), v3dot(v3sub(cpos, wpos), up) - 0.3f));
-    oblique(&v->projection_matrix, &v->matrix_world_inverse, up, v3sub(wpos, v3scale(up, drop)));
+    oblique(&v->projection_matrix, &v->matrix_world_inverse, up, wpos);
     t3_mat4_invert(&v->projection_matrix_inverse, &v->projection_matrix);
     /* backdrops lighting the scene (cartwheel/backdrop.h environment): where the mirrored view finds nothing of the
      * scene it shows their worlds, the environment's sharpest level drawn as its background (the backdrops are as far

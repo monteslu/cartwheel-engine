@@ -468,10 +468,7 @@ export async function applyWater({ TSL, THREE, mat, props, sentinel }, low) {
   const thr = float(0.95).sub(shore.w.mul(0.4));
   const farFade = float(1).sub(smoothstep(200, 700, dist));
   const crestFoam = smoothstep(thr, thr.add(0.12), float(1).sub(vBunch).add(noise.sub(0.5).mul(0.25))).mul(step(0.001, shore.w)).mul(lumpy).mul(farFade);
-  // (the crest's lace stands back where an object shows through the water: a look of the thin top of a wave, it must not
-  // paint over a leg or a hull riding the crest; the foam a body makes, its splash and wake, stays)
-  const crestTopFoam = smoothstep(0.7, 0.86, hBody.add(noise.sub(0.5).mul(0.14))).mul(crestLight.x).mul(lumpy).mul(float(1).sub(smoothstep(400, 1100, dist)))
-    .mul(float(1).sub(objV.mul(contact.z)));
+  const crestTopFoam = smoothstep(0.7, 0.86, hBody.add(noise.sub(0.5).mul(0.14))).mul(crestLight.x).mul(lumpy).mul(float(1).sub(smoothstep(400, 1100, dist)));
   const splashFoam = smoothstep(0.08, 0.5, rfoam.mul(mix(0.55, 1.2, noise2)));
   const foamRaw = max(max(shoreFoam.mul(mix(0.55, 1, lumpy)), lines.mul(noise2)), max(max(crestFoam, crestTopFoam), splashFoam));
   // foam is lace, not cotton: the caustic tile's web of lines, scrolled with the flow, is the bubbles' pattern; thin
@@ -487,7 +484,11 @@ export async function applyWater({ TSL, THREE, mat, props, sentinel }, low) {
   const thick = max(max(shoreFoam.mul(mix(0.55, 1, lumpy)), lines.mul(noise2)), max(max(crestFoam, crestTopFoam), rfoam.mul(1.25)));
   const cover = smoothstep(0.04, 0.62, thick.add(patchy.sub(0.5).mul(0.55).mul(float(1).sub(smoothstep(0.5, 1, thick)))));
   const foam2 = cover.mul(mix(softLace.mul(0.75).add(0.25), float(1), smoothstep(0.42, 0.95, thick))).mul(mix(0.8, 1, noise));
-  const foam = mix(foam1, clamp(foam2, 0, 1), refrSize.w);
+  // (foam stands back over an object under the surface: none over its first 10 cm, so at the line a leg or a hull is
+  // seen through clear water, never painted over by the crest's foam and lace or a wake's; it comes back by 35 cm, and
+  // in between as the object fades. The white water of a hull at speed is the game's spray, drawn over the water)
+  const foamBack = objB.mul(float(1).sub(smoothstep(0.1, 0.35, tapC.z))).mul(contact.z);
+  const foam = mix(foam1, clamp(foam2, 0, 1), refrSize.w).mul(float(1).sub(max(foamBack, objV.mul(contact.z))));
   // (the glow comes from the water between the surface and what lies behind it: in front of an object near the line
   // there is almost none)
   const emitAbove = mix(refr, refl, fres).add(sss.mul(float(1).sub(fres)).mul(float(1).sub(objV.mul(contact.z)))).add(gl);

@@ -44,6 +44,8 @@ distortion = 0.025
 crest_foam = 0
 crest_light = 1
 resolution_scale = 0.5
+ripple_cells = 128
+ripple_size = vec2(24, 24)
 
 [node name="Floor" parent="." type="StaticBody3D"]
 position = vec3(0, -30.25, 0)
